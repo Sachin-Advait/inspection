@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<definitions
+        xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:flowable="http://flowable.org/bpmn"
+        targetNamespace="http://www.flowable.org/processdef">
+
+  <process
+          id="permit_inspection_process_municipality"
+          name="inspection-process-municipality"
+          isExecutable="true">
+
+    <startEvent id="startEvent1" name="Start"/>
+
+    <userTask
+            id="inspectorTask"
+            name="Inspector Inspection"
+            flowable:candidateGroups="inspector"/>
+
+    <sequenceFlow
+            id="flow1"
+            sourceRef="startEvent1"
+            targetRef="inspectorTask"/>
+
+    <userTask
+            id="supervisorTask"
+            name="Supervisor Approval"
+            flowable:candidateGroups="supervisor"/>
+
+    <sequenceFlow
+            id="flow2"
+            sourceRef="inspectorTask"
+            targetRef="supervisorTask"/>
+
+    <exclusiveGateway
+            id="fineGateway"
+            name="Fine > Supervisor Limit?"
+            default="flowNo"/>
+
+    <sequenceFlow
+            id="flow3"
+            sourceRef="supervisorTask"
+            targetRef="fineGateway"/>
+
+    <userTask
+            id="managerTask"
+            name="Manager Approval"
+            flowable:candidateGroups="manager"/>
+
+    <sequenceFlow
+            id="flowYes"
+            name="yes"
+            sourceRef="fineGateway"
+            targetRef="managerTask">
+
+      <conditionExpression xsi:type="tFormalExpression">
+        <![CDATA[${fine > supervisorLimit}]]>
+      </conditionExpression>
+
+    </sequenceFlow>
+
+    <serviceTask
+            id="generateNotice"
+            name="Generate Notice"
+            flowable:class="com.gissoft.inspection_backend.workflow.GenerateNoticeService"/>
+
+    <sequenceFlow
+            id="flowNo"
+            name="No"
+            sourceRef="fineGateway"
+            targetRef="generateNotice"/>
+
+    <sequenceFlow
+            id="flowAfterManager"
+            sourceRef="managerTask"
+            targetRef="generateNotice"/>
+
+    <serviceTask
+            id="pushOracle"
+            name="Push Enforcement To Oracle"
+            flowable:class="com.gissoft.inspection_backend.workflow.PushOracleService"/>
+
+    <sequenceFlow
+            id="flow4"
+            sourceRef="generateNotice"
+            targetRef="pushOracle"/>
+
+    <endEvent id="endEvent1" name="End"/>
+
+    <sequenceFlow
+            id="flow5"
+            sourceRef="pushOracle"
+            targetRef="endEvent1"/>
+
+  </process>
+
+</definitions>
