@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.OffsetDateTime;
 
 @RestController
-@RequestMapping("/api/messages")
+@RequestMapping("/messages")
 @RequiredArgsConstructor
 public class MessagingController {
 

@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/admin")
+@RequestMapping("/admin")
 @RequiredArgsConstructor
 public class AdminController {
 
@@ -45,6 +45,13 @@ public class AdminController {
             @Valid @RequestBody CreateUserRequest req,
             @RequestParam(defaultValue = "admin") String actor) {
         return ResponseEntity.ok(userAdminService.create(req, actor));
+    }
+
+    @GetMapping("/users/{id}")
+    public ResponseEntity<AppUser> getUser(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "admin") String actor) {
+        return ResponseEntity.ok(userAdminService.findById(id));
     }
 
     @PutMapping("/users/{id}")
