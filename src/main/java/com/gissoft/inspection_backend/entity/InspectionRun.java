@@ -1,8 +1,8 @@
 package com.gissoft.inspection_backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.OffsetDateTime;
@@ -13,19 +13,25 @@ import java.util.UUID;
 @Entity
 @Table(name = "inspection_run")
 @EntityListeners(AuditingEntityListener.class)
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class InspectionRun {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "task_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "answers", "approvalRequests"})
     private Task task;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "entity_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private EntityMaster entity;
 
     @Column(name = "checklist_template_id", nullable = false)
@@ -43,7 +49,9 @@ public class InspectionRun {
     @Column(name = "submitted_at")
     private OffsetDateTime submittedAt;
 
-    /** PASS | FAIL | CONDITIONAL */
+    /**
+     * PASS | FAIL | CONDITIONAL
+     */
     @Column(length = 30)
     private String outcome;
 
@@ -52,9 +60,11 @@ public class InspectionRun {
 
     @OneToMany(mappedBy = "inspection", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
+    @JsonIgnoreProperties({"inspection"})
     private List<InspectionAnswer> answers = new ArrayList<>();
 
     @OneToMany(mappedBy = "inspection", cascade = CascadeType.ALL)
     @Builder.Default
+    @JsonIgnoreProperties({"inspection"})
     private List<ApprovalRequest> approvalRequests = new ArrayList<>();
 }
