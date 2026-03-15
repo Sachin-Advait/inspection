@@ -15,7 +15,7 @@ public class TaskQueryService {
 
     private final TaskService taskService;
 
-    public List<TaskDto> getSupervisorTasks(){
+    public List<TaskDto> getSupervisorTasks() {
 
         List<Task> tasks = taskService.createTaskQuery()
                 .taskCandidateGroup("supervisor")
@@ -30,7 +30,8 @@ public class TaskQueryService {
                 ))
                 .collect(Collectors.toList());
     }
-    public List<TaskDto> getInspectorTasks(){
+
+    public List<TaskDto> getInspectorTasks() {
 
         List<Task> tasks = taskService.createTaskQuery()
                 .taskCandidateGroup("inspector")
@@ -46,7 +47,15 @@ public class TaskQueryService {
                 .collect(Collectors.toList());
     }
 
-    public void completeTask(String taskId){
+    public void completeTask(String taskId) {
         taskService.complete(taskId);
+    }
+
+    /**
+     * Complete a task and pass process variables back to the engine.
+     * Useful for inspection submit / approval decisions.
+     */
+    public void completeTask(String taskId, java.util.Map<String, Object> variables) {
+        taskService.complete(taskId, variables);
     }
 }
