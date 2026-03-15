@@ -26,7 +26,6 @@ import java.util.UUID;
 /**
  * REST-facing notice service used by OpsController.
  */
-
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -36,6 +35,7 @@ public class NoticeService {
     private final EntityMasterRepository entityRepo;
     private final MessageLogRepository messageLogRepo;
     private final Cloudinary cloudinary;
+    private final WhatsAppService whatsAppService;
     private final AuditService auditService;
 
     // ── Generate notice PDF and persist ──────────────────────────────────────
@@ -48,13 +48,11 @@ public class NoticeService {
                         "Entity not found: " + req.entityId()));
 
         String noticeNo = buildNoticeNo(req.noticeType());
-
         byte[] pdfBytes = buildMinimalPdf(noticeNo, entity, req);
 
         String pdfUrl;
 
         try {
-
             Map uploadResult = cloudinary.uploader().upload(
                     new ByteArrayInputStream(pdfBytes),
                     ObjectUtils.asMap(
@@ -62,11 +60,9 @@ public class NoticeService {
                             "public_id", "notices/" + req.entityId() + "/" + noticeNo
                     )
             );
-
             pdfUrl = uploadResult.get("secure_url").toString();
 
         } catch (Exception ex) {
-
             log.error("Cloudinary upload failed for notice {}: {}", noticeNo, ex.getMessage());
             throw new RuntimeException("Notice PDF upload failed", ex);
         }
@@ -78,19 +74,17 @@ public class NoticeService {
                 .noticeType(req.noticeType())
                 .fineAmount(req.fineAmount())
                 .status("DRAFT")
-                .storageKeyPdf(pdfUrl)   // storing URL instead
+                .storageKeyPdf(pdfUrl)
                 .paymentStatus("UNPAID")
                 .generatedBy(actor)
                 .build();
 
         notice = noticeRepo.save(notice);
-
         auditService.log(actor, "GENERATE_NOTICE", "Notice", notice.getId().toString());
-
         return notice;
     }
 
-    // ── Send via messaging channel ────────────────────────────────────────────
+    // ── Send via messaging channel + WhatsApp ────────────────────────────────
 
     @Transactional
     public Notice send(UUID noticeId, SendRequest req, String actor) {
@@ -105,25 +99,48 @@ public class NoticeService {
         String channel = (req != null && req.channel() != null)
                 ? req.channel().toUpperCase() : "WHATSAPP";
 
+        // ── Build message text ────────────────────────────────────────────────
+
+        String messageText = buildWhatsAppMessage(notice, entity);
+
+        // ── Send via WhatsApp (Twilio) ────────────────────────────────────────
+
+        String providerMsgId = null;
+        String deliveryStatus = "FAILED";
+
+        if ("WHATSAPP".equals(channel)) {
+            if (entity.getOwnerPhone() != null && !entity.getOwnerPhone().isBlank()) {
+                String phone = entity.getOwnerPhone().startsWith("+")
+                        ? entity.getOwnerPhone()
+                        : "+" + entity.getOwnerPhone();
+
+                providerMsgId = whatsAppService.sendMessage(phone, messageText);
+
+                deliveryStatus = providerMsgId != null ? "SENT" : "FAILED";
+            } else {
+                log.warn("Cannot send WhatsApp — no phone number for entity: {}",
+                        entity.getId());
+            }
+        }
+
+        // ── Persist message log ───────────────────────────────────────────────
+
         MessageLog msgLog = MessageLog.builder()
                 .entityId(entity.getId())
                 .channel(channel)
                 .recipient(entity.getOwnerPhone() != null ? entity.getOwnerPhone() : "unknown")
                 .templateId("notice-" + notice.getNoticeType().toLowerCase())
-                .messageBody("Notice " + notice.getNoticeNo() + " issued. Amount: "
-                        + (notice.getFineAmount() != null ? notice.getFineAmount() : "N/A"))
-                .status("SENT")
+                .messageBody(messageText)
+                .status(deliveryStatus)
+                .providerMsgId(providerMsgId)
                 .sentBy(actor)
                 .build();
 
         messageLogRepo.save(msgLog);
 
         notice.setStatus("SENT");
-
         notice = noticeRepo.save(notice);
-
         auditService.log(actor, "SEND_NOTICE", "Notice", noticeId.toString());
-
         return notice;
     }
 
@@ -133,14 +150,10 @@ public class NoticeService {
     public Notice markServed(UUID noticeId, String actor) {
 
         Notice notice = findById(noticeId);
-
         notice.setServedAt(OffsetDateTime.now());
         notice.setStatus("SERVED");
-
         notice = noticeRepo.save(notice);
-
         auditService.log(actor, "MARK_SERVED", "Notice", noticeId.toString());
-
         return notice;
     }
 
@@ -150,13 +163,9 @@ public class NoticeService {
     public Notice updatePayment(UUID noticeId, String paymentStatus, String actor) {
 
         Notice notice = findById(noticeId);
-
         notice.setPaymentStatus(paymentStatus);
-
         notice = noticeRepo.save(notice);
-
         auditService.log(actor, "UPDATE_PAYMENT", "Notice", noticeId.toString());
-
         return notice;
     }
 
@@ -164,17 +173,44 @@ public class NoticeService {
 
     public Page<Notice> list(String noticeType, String status,
                              String paymentStatus, Pageable pageable) {
-
         return noticeRepo.findByFilters(noticeType, status, paymentStatus, pageable);
     }
 
     public Notice findById(UUID id) {
-
         return noticeRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Notice not found: " + id));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private String buildWhatsAppMessage(Notice notice, EntityMaster entity) {
+
+        StringBuilder msg = new StringBuilder();
+
+        msg.append("Dear ").append(safe(entity.getOwnerName())).append(",\n\n");
+
+        msg.append(switch (notice.getNoticeType().toUpperCase()) {
+            case "WARNING" -> "A *WARNING* notice has been issued for your establishment.";
+            case "FINE" -> "A *FINE* notice has been issued for your establishment.";
+            case "CLOSURE" -> "A *CLOSURE* notice has been issued for your establishment.";
+            default -> "A notice has been issued for your establishment.";
+        });
+
+        msg.append("\n\n*Notice No:* ").append(notice.getNoticeNo());
+        msg.append("\n*Establishment:* ").append(safe(entity.getName()));
+
+        if (notice.getFineAmount() != null) {
+            msg.append("\n*Fine Amount:* ").append(notice.getFineAmount()).append(" OMR");
+        }
+
+        if (notice.getStorageKeyPdf() != null) {
+            msg.append("\n\n*View Notice PDF:*\n").append(notice.getStorageKeyPdf());
+        }
+
+        msg.append("\n\nFor queries please contact the Municipality.");
+
+        return msg.toString();
+    }
 
     private String buildNoticeNo(String type) {
 
