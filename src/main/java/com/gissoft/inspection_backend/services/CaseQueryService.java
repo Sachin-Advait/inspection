@@ -23,12 +23,12 @@ import java.util.UUID;
 public class CaseQueryService {
 
     private final EntityMasterRepository entityRepo;
-    private final TaskRepository         taskRepo;
+    private final TaskRepository taskRepo;
 
     // ── Case / entity search (O03 + O05) ─────────────────────────────────────
 
     public Page<EntityMaster> searchCases(String query, String dg,
-                                           String category, Pageable pageable) {
+                                          String category, Pageable pageable) {
         return entityRepo.search(dg, category, query, pageable);
     }
 
@@ -45,10 +45,10 @@ public class CaseQueryService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Task not found: " + taskId));
         return Map.of(
-                "taskId",       taskId,
-                "entityRef",    task.getEntity().getExternalRef(),
+                "taskId", taskId,
+                "entityRef", task.getEntity().getExternalRef(),
                 "sourceSystem", task.getEntity().getSourceSystem(),
-                "docs",         List.of()   // populate from oracle_doc_cache when available
+                "docs", List.of()   // populate from oracle_doc_cache when available
         );
     }
 

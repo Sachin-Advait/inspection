@@ -8,7 +8,6 @@ import com.gissoft.inspection_backend.entity.*;
 import com.gissoft.inspection_backend.repository.EntityMasterRepository;
 import com.gissoft.inspection_backend.repository.InspectionRunRepository;
 import com.gissoft.inspection_backend.repository.TaskRepository;
-import com.gissoft.inspection_backend.workflow.PushOracleService;
 import com.gissoft.inspection_backend.workflow.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,7 +27,6 @@ public class InspectionService {
     private final TaskRepository taskRepo;
     private final EntityMasterRepository entityRepo;
     private final ChecklistService checklistService;
-    private final PushOracleService pushOracleService;
     private final WorkflowService workflowService;
     private final AuditService auditService;
 
@@ -54,7 +52,6 @@ public class InspectionService {
 
         InspectionRun run = InspectionRun.builder()
                 .task(task)
-                .entity(entity)
                 .checklistTemplateId(template.getId())
                 .checklistVersion(template.getVersion())
                 .startedBy(inspector)

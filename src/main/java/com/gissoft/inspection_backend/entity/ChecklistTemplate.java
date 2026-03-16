@@ -1,5 +1,6 @@
 package com.gissoft.inspection_backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -12,9 +13,13 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "checklist_template",
-       uniqueConstraints = @UniqueConstraint(columnNames = {"dg","category","phase_type","version"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"dg", "category", "phase_type", "version"}))
 @EntityListeners(AuditingEntityListener.class)
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ChecklistTemplate {
 
     @Id
@@ -33,16 +38,19 @@ public class ChecklistTemplate {
     @Column(nullable = false)
     private int version;
 
-    /** DRAFT | PUBLISHED | ACTIVE | RETIRED */
+    /**
+     * DRAFT | PUBLISHED | ACTIVE | RETIRED
+     */
     @Column(nullable = false, length = 20)
     private String status;
 
     @Column(name = "release_notes", length = 800)
     private String releaseNotes;
 
-    @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "template", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("sortOrder ASC")
     @Builder.Default
+    @JsonIgnoreProperties({"template"})
     private List<ChecklistSection> sections = new ArrayList<>();
 
     @CreatedDate

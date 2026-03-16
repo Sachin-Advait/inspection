@@ -17,7 +17,9 @@ public class AuditService {
 
     private final AuditLogRepository auditLogRepository;
 
-    /** Fire-and-forget — never blocks the calling thread. */
+    /**
+     * Fire-and-forget — never blocks the calling thread.
+     */
     @Async
     public void log(String actor, String action, String resourceType,
                     String resourceId, Map<String, Object> diff, String remoteIp) {
@@ -37,8 +39,18 @@ public class AuditService {
     }
 
     public Page<AuditLog> search(String actor, String resourceType,
-                                  OffsetDateTime from, OffsetDateTime to,
-                                  Pageable pageable) {
-        return auditLogRepository.search(actor, resourceType, from, to, pageable);
+                                 OffsetDateTime from, OffsetDateTime to,
+                                 Pageable pageable) {
+        // Pass empty string instead of null — Neon PostgreSQL cannot infer
+        // the type of null parameters in JPQL queries
+        String actorParam = actor != null ? actor : "";
+        String resourceTypeParam = resourceType != null ? resourceType : "";
+
+        // Default date range: epoch to far future if not provided
+        OffsetDateTime fromParam = from != null ? from : OffsetDateTime.parse("2000-01-01T00:00:00Z");
+        OffsetDateTime toParam = to != null ? to : OffsetDateTime.parse("2099-12-31T23:59:59Z");
+
+        return auditLogRepository.search(actorParam, resourceTypeParam,
+                fromParam, toParam, pageable);
     }
 }

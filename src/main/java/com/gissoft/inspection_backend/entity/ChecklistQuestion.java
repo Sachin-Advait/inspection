@@ -1,5 +1,6 @@
 package com.gissoft.inspection_backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
 import jakarta.persistence.*;
 import lombok.*;
@@ -10,7 +11,11 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "checklist_question")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ChecklistQuestion {
 
     @Id
@@ -19,6 +24,7 @@ public class ChecklistQuestion {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "section_id", nullable = false)
+    @JsonIgnoreProperties({"questions", "template", "hibernateLazyInitializer", "handler"})
     private ChecklistSection section;
 
     @Column(name = "sort_order", nullable = false)
@@ -27,7 +33,9 @@ public class ChecklistQuestion {
     @Column(nullable = false, length = 400)
     private String text;
 
-    /** PASS_FAIL | YES_NO | TEXT | NUMBER | CHOICE */
+    /**
+     * PASS_FAIL | YES_NO | TEXT | NUMBER | CHOICE
+     */
     @Column(name = "answer_type", nullable = false, length = 30)
     private String answerType;
 
@@ -38,6 +46,7 @@ public class ChecklistQuestion {
     @Column(name = "validations_json", columnDefinition = "jsonb")
     private Map<String, Object> validationsJson;
 
-    @OneToOne(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToOne(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @JsonIgnoreProperties({"question"})
     private ChecklistRule rule;
 }

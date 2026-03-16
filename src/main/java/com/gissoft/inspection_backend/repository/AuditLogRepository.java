@@ -14,17 +14,23 @@ import java.util.UUID;
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
+    /**
+     * Neon PostgreSQL cannot infer the type of null JPQL parameters.
+     * Use COALESCE to avoid passing raw nulls — always pass a real value.
+     * AuditService passes empty string "" for nulls on String params,
+     * and epoch/far-future for date params.
+     */
     @Query("""
-        SELECT a FROM AuditLog a
-        WHERE (:actor        IS NULL OR a.actor        = :actor)
-          AND (:resourceType IS NULL OR a.resourceType = :resourceType)
-          AND (:from         IS NULL OR a.createdAt   >= :from)
-          AND (:to           IS NULL OR a.createdAt   <= :to)
-        ORDER BY a.createdAt DESC
-        """)
-    Page<AuditLog> search(@Param("actor")        String actor,
-                           @Param("resourceType") String resourceType,
-                           @Param("from")         OffsetDateTime from,
-                           @Param("to")           OffsetDateTime to,
-                           Pageable pageable);
+            SELECT a FROM AuditLog a
+            WHERE (COALESCE(:actor, '') = '' OR a.actor = :actor)
+              AND (COALESCE(:resourceType, '') = '' OR a.resourceType = :resourceType)
+              AND a.createdAt >= :from
+              AND a.createdAt <= :to
+            ORDER BY a.createdAt DESC
+            """)
+    Page<AuditLog> search(@Param("actor") String actor,
+                          @Param("resourceType") String resourceType,
+                          @Param("from") OffsetDateTime from,
+                          @Param("to") OffsetDateTime to,
+                          Pageable pageable);
 }

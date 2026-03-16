@@ -7,6 +7,7 @@ import com.gissoft.inspection_backend.dto.PermitDto.CreatePermitRequest;
 import com.gissoft.inspection_backend.dto.ReportDto.ReportRequest;
 import com.gissoft.inspection_backend.dto.WorkPlanDto.CreatePlanRequest;
 import com.gissoft.inspection_backend.entity.*;
+import com.gissoft.inspection_backend.repository.TaskRepository;
 import com.gissoft.inspection_backend.services.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,8 +36,10 @@ public class OpsController {
     private final InspectionService inspectionService;
     private final ApprovalService approvalService;
     private final InternalPermitService permitService;
-    private final NoticeService noticeService;   // services.NoticeService — REST API
+    private final NoticeService noticeService;
     private final ReportingService reportingService;
+    private final ViolationService violationService;
+    private final TaskRepository taskRepo;
 
     // =========================================================================
     // Dashboard (O01)
@@ -266,5 +269,104 @@ public class OpsController {
             }
             default -> ResponseEntity.ok(reportingService.buildReport(req));
         };
+    }
+
+    // ── Add these endpoints to OpsController ─────────────────────────────────────
+// These feed the Dashboard widgets visible in the web UI screenshot
+
+    // =========================================================================
+    // Dashboard widgets (O01 — additional panels)
+    // =========================================================================
+
+    /**
+     * GET /ops/top-violations?limit=5
+     * Top Violations table — code, description, count, trend (Rising/Falling)
+     */
+    @GetMapping("/ops/top-violations")
+    public ResponseEntity<List<Map<String, Object>>> getTopViolations(
+            @RequestParam(defaultValue = "5") int limit) {
+
+        // Query notices grouped by violation type to get counts
+        // For now returns violation codes with their fine rule info as a base
+        List<Map<String, Object>> result = violationService.listCodes()
+                .stream()
+                .limit(limit)
+                .map(v -> {
+                    Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("code", v.getCode());
+                    row.put("description", v.getDescription());
+                    row.put("severity", v.getSeverity());
+                    row.put("count", 0);      // wire to inspection_answer aggregate later
+                    row.put("trend", "STABLE");
+                    return row;
+                })
+                .toList();
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * GET /ops/repeat-offenders?limit=10
+     * Repeat Offenders table — entities with multiple FAIL inspections
+     */
+    @GetMapping("/ops/repeat-offenders")
+    public ResponseEntity<List<Map<String, Object>>> getRepeatOffenders(
+            @RequestParam(defaultValue = "10") int limit) {
+
+        // Entities with most FAIL inspections — aggregate query
+        // Wire to a real JPQL aggregate on inspection_run when ready
+        return ResponseEntity.ok(List.of());
+    }
+
+    /**
+     * GET /ops/team-today?supervisor=ahmed.ali
+     * My Team Today panel — open/due-soon/breach counts + case list
+     */
+    @GetMapping("/ops/team-today")
+    public ResponseEntity<Map<String, Object>> getTeamToday(
+            @RequestParam(required = false) String supervisor) {
+
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime todayEnd = now.withHour(23).withMinute(59).withSecond(59);
+        OffsetDateTime soonCut = now.plusHours(4);
+
+        long open = taskRepo.countByAssignedToAndStatusAndDueAtBefore(null, "PENDING", todayEnd);
+        long dueSoon = taskRepo.countByAssignedToAndStatusAndDueAtBefore(null, "PENDING", soonCut);
+        long breach = taskRepo.countByAssignedToAndStatusAndDueAtBefore(null, "PENDING", now);
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("open", open);
+        result.put("dueSoon", dueSoon);
+        result.put("breach", breach);
+        result.put("cases", List.of());  // wire to task list with entity details
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * GET /ops/critical-cases?limit=5
+     * Critical · Needs Attention panel — overdue HIGH priority tasks
+     */
+    @GetMapping("/ops/critical-cases")
+    public ResponseEntity<List<Map<String, Object>>> getCriticalCases(
+            @RequestParam(defaultValue = "5") int limit) {
+
+        // Tasks that are overdue + HIGH priority
+        List<Map<String, Object>> cases = taskRepo
+                .findByFilters(null, "PENDING", null, null, "HIGH",
+                        org.springframework.data.domain.PageRequest.of(0, limit))
+                .getContent()
+                .stream()
+                .filter(t -> t.getDueAt() != null && t.getDueAt().isBefore(OffsetDateTime.now()))
+                .map(t -> {
+                    Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("taskId", t.getId());
+                    row.put("entityRef", t.getEntity().getExternalRef());
+                    row.put("entityName", t.getEntity().getName());
+                    row.put("type", t.getPhaseOrSubtype());
+                    row.put("priority", t.getPriority());
+                    row.put("status", "SLA_BREACH");
+                    return row;
+                })
+                .toList();
+        return ResponseEntity.ok(cases);
     }
 }

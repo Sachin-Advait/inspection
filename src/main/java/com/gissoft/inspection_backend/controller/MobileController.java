@@ -53,6 +53,11 @@ public class MobileController {
         return ResponseEntity.ok(taskService.getMyTasks(actor, from, to));
     }
 
+    @GetMapping("/tasks/{taskId}")
+    public ResponseEntity<Task> getTask(@PathVariable UUID taskId) {
+        return ResponseEntity.ok(taskService.findById(taskId));
+    }
+
     /**
      * GET /api/tasks/{taskId}/docs
      */
