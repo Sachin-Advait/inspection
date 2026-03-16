@@ -8,6 +8,7 @@ import com.gissoft.inspection_backend.entity.*;
 import com.gissoft.inspection_backend.repository.EntityMasterRepository;
 import com.gissoft.inspection_backend.repository.InspectionRunRepository;
 import com.gissoft.inspection_backend.repository.TaskRepository;
+import com.gissoft.inspection_backend.workflow.PushOracleService;
 import com.gissoft.inspection_backend.workflow.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ public class InspectionService {
     private final TaskRepository taskRepo;
     private final EntityMasterRepository entityRepo;
     private final ChecklistService checklistService;
+    private final PushOracleService pushOracleService;
     private final WorkflowService workflowService;
     private final AuditService auditService;
 
@@ -44,6 +46,13 @@ public class InspectionService {
         });
 
         EntityMaster entity = task.getEntity();
+
+        // Guard: task must have a linked entity — catches bad data early
+        if (entity == null) {
+            throw new IllegalArgumentException(
+                    "Task has no linked entity. Fix task data before starting inspection. TaskId: "
+                            + req.taskId());
+        }
         ChecklistTemplate template = checklistService.getActive(
                 entity.getDirectorate(), entity.getCategory(), task.getPhaseOrSubtype());
 
@@ -52,6 +61,7 @@ public class InspectionService {
 
         InspectionRun run = InspectionRun.builder()
                 .task(task)
+                .entity(entity)
                 .checklistTemplateId(template.getId())
                 .checklistVersion(template.getVersion())
                 .startedBy(inspector)
