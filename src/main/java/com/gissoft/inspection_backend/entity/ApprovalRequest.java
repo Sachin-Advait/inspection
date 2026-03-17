@@ -19,9 +19,9 @@ public class ApprovalRequest {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "inspection_id", nullable = false)
-    @JsonIgnoreProperties
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "answers", "approvalRequests"})
     private InspectionRun inspection;
 
     /** SUPERVISOR | MANAGER */
