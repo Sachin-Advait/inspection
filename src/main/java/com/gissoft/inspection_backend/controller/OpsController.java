@@ -1,6 +1,7 @@
 package com.gissoft.inspection_backend.controller;
 
 import com.gissoft.inspection_backend.dto.ApprovalDto.DecisionRequest;
+import com.gissoft.inspection_backend.dto.CreateDemoTaskRequest;
 import com.gissoft.inspection_backend.dto.NoticeDto.GenerateRequest;
 import com.gissoft.inspection_backend.dto.NoticeDto.SendRequest;
 import com.gissoft.inspection_backend.dto.PermitDto.CreatePermitRequest;
@@ -17,6 +18,9 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.OffsetDateTime;
@@ -369,4 +373,13 @@ public class OpsController {
                 .toList();
         return ResponseEntity.ok(cases);
     }
+
+    @PostMapping("/admin/tasks/demo")
+    public ResponseEntity<Task> createDemoTask(
+            @Valid @RequestBody CreateDemoTaskRequest req,
+            @RequestParam(defaultValue = "system") String actor) {
+
+        return ResponseEntity.ok(taskService.createDemoTask(req, actor));
+    }
+
 }

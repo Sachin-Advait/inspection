@@ -121,8 +121,7 @@ public class InspectionService {
         entityRepo.save(entity);
 
         // Approval or direct Oracle push
-        boolean needsApproval = !"PASS".equals(outcome) &&
-                "ORACLE".equals(entity.getSourceSystem());
+        boolean needsApproval = true;
         if (needsApproval) {
             // Create DB approval record for portal queue
             ApprovalRequest approval = ApprovalRequest.builder()

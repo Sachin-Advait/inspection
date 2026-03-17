@@ -59,6 +59,14 @@ public class MobileController {
     }
 
     /**
+     * GET /api/tasks
+     */
+    @GetMapping("/tasks")
+    public ResponseEntity<List<Task>> getAllTasks() {
+        return ResponseEntity.ok(taskService.getAllTasks());
+    }
+
+    /**
      * GET /api/tasks/{taskId}/docs
      */
     @GetMapping("/tasks/{taskId}/docs")

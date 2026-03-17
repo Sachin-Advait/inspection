@@ -70,6 +70,14 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * GET /api/inspectors
+     */
+    @GetMapping("/inspectors")
+    public ResponseEntity<List<AppUser>> getInspectors() {
+        return ResponseEntity.ok(userAdminService.getInspectors());
+    }
+
     // =========================================================================
     // Checklists (A03 + A04)
     // =========================================================================

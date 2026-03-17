@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -30,6 +31,9 @@ public class UserAdminService {
     public AppUser findById(UUID id) {
         return userRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
+    }
+    public List<AppUser> getInspectors() {
+        return userRepo.findByRoleAndActiveTrue("INSPECTOR");
     }
 
     // ── Create ────────────────────────────────────────────────────────────────

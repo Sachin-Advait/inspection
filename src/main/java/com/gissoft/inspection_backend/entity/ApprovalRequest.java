@@ -1,5 +1,6 @@
 package com.gissoft.inspection_backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import org.springframework.data.annotation.CreatedDate;
@@ -20,6 +21,7 @@ public class ApprovalRequest {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inspection_id", nullable = false)
+    @JsonIgnoreProperties
     private InspectionRun inspection;
 
     /** SUPERVISOR | MANAGER */

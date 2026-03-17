@@ -1,5 +1,6 @@
 package com.gissoft.inspection_backend.services;
 
+import com.gissoft.inspection_backend.dto.CreateDemoTaskRequest;
 import com.gissoft.inspection_backend.dto.CreateTaskRequest;
 import com.gissoft.inspection_backend.dto.TaskFilterRequest;
 import com.gissoft.inspection_backend.entity.EntityMaster;
@@ -105,6 +106,48 @@ public class TaskService {
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + id));
     }
 
+    public List<Task> getAllTasks() {
+        return taskRepo.findAll();
+    }
+
+
+    @Transactional
+    public Task createDemoTask(CreateDemoTaskRequest req, String actor) {
+
+        EntityMaster entity = EntityMaster.builder()
+                .externalRef("DEMO-" + System.currentTimeMillis())
+                .directorate(req.directorate())
+                .category(req.category())
+                .sourceSystem("INTERNAL")
+                .name(req.entityName())
+                .ownerName(req.ownerName())
+                .ownerPhone(req.ownerPhone())
+                .lat(req.lat())
+                .lon(req.lon())
+                .complianceFlag("ACTIVE")
+                // these start null — updated after first inspection is submitted
+                .lastInspectionAt(null)
+                .lastInspectionResult(null)
+                .nextDueAt(req.nextDueAt())
+                .build();
+
+        entity = entityRepo.save(entity);
+
+        Task task = Task.builder()
+                .entity(entity)
+                .taskType(req.taskType())
+                .phaseOrSubtype(req.phaseOrSubtype())
+                .assignedTo(req.assignedTo())
+                .status("PENDING")
+                .dueAt(req.dueAt())
+                .priority(req.priority() != null ? req.priority() : "MEDIUM")
+                .sourceSystem("INTERNAL")
+                .build();
+
+        task = taskRepo.save(task);
+        auditService.log(actor, "CREATE_DEMO_TASK", "Task", task.getId().toString());
+        return task;
+    }
     public List<Task> findByEntity(UUID entityId) {
         return taskRepo.findByEntityIdOrderByDueAtAsc(entityId);
     }
