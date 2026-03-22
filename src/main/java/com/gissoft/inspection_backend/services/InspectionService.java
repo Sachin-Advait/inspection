@@ -1,205 +1,235 @@
 package com.gissoft.inspection_backend.services;
 
-import com.gissoft.inspection_backend.dto.InspectionDto.AnswerBatch;
-import com.gissoft.inspection_backend.dto.InspectionDto.AnswerItem;
-import com.gissoft.inspection_backend.dto.InspectionDto.StartRequest;
-import com.gissoft.inspection_backend.dto.InspectionDto.SubmitRequest;
+import com.gissoft.inspection_backend.dto.InspectionDto;
 import com.gissoft.inspection_backend.entity.*;
-import com.gissoft.inspection_backend.repository.EntityMasterRepository;
-import com.gissoft.inspection_backend.repository.InspectionRunRepository;
-import com.gissoft.inspection_backend.repository.TaskRepository;
-import com.gissoft.inspection_backend.workflow.PushOracleService;
+import com.gissoft.inspection_backend.repository.*;
 import com.gissoft.inspection_backend.workflow.WorkflowService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class InspectionService {
 
-    private final InspectionRunRepository inspectionRunRepo;
+    private final InspectionRunRepository inspectionRepo;
     private final TaskRepository taskRepo;
-    private final EntityMasterRepository entityRepo;
     private final ChecklistService checklistService;
-    private final PushOracleService pushOracleService;
+    private final PhaseResolverService phaseResolverService;
     private final WorkflowService workflowService;
     private final AuditService auditService;
 
-    // ── Start ─────────────────────────────────────────────────────────────────
+    // =========================================================
+    // START INSPECTION
+    // =========================================================
+    public InspectionDto.InspectionResponse start(UUID taskId, String actor) {
 
-    @Transactional
-    public InspectionRun start(StartRequest req, String inspector) {
-        Task task = taskRepo.findById(req.taskId())
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + req.taskId()));
+        Task task = taskRepo.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
-        // Guard: one open inspection per task
-        inspectionRunRepo.findByTaskIdAndSubmittedAtIsNull(req.taskId()).ifPresent(e -> {
-            throw new IllegalStateException(
-                    "An open inspection already exists for task: " + req.taskId());
-        });
+        inspectionRepo.findByTaskIdAndSubmittedAtIsNull(taskId)
+                .ifPresent(i -> {
+                    throw new IllegalStateException("Inspection already in progress");
+                });
 
-        EntityMaster entity = task.getEntity();
+        ChecklistTemplate checklist = checklistService.getActive(
+                task.getEntity().getDirectorate(),
+                task.getEntity().getCategory(),
+                task.getPhase()
+        );
 
-        // Guard: task must have a linked entity — catches bad data early
-        if (entity == null) {
-            throw new IllegalArgumentException(
-                    "Task has no linked entity. Fix task data before starting inspection. TaskId: "
-                            + req.taskId());
-        }
-        ChecklistTemplate template = checklistService.getActive(
-                entity.getDirectorate(), entity.getCategory(), task.getPhaseOrSubtype());
+        InspectionRun run = InspectionRun.builder()
+                .task(task)
+                .entity(task.getEntity())
+                .checklistTemplateId(checklist.getId())
+                .checklistVersion(checklist.getVersion())
+                .startedBy(actor)
+                .startedAt(OffsetDateTime.now())
+                .build();
 
         task.setStatus("IN_PROGRESS");
         taskRepo.save(task);
 
-        InspectionRun run = InspectionRun.builder()
-                .task(task)
-                .entity(entity)
-                .checklistTemplateId(template.getId())
-                .checklistVersion(template.getVersion())
-                .startedBy(inspector)
-                .startedAt(OffsetDateTime.now())
-                .build();
-
-        run = inspectionRunRepo.save(run);
-        auditService.log(inspector, "START", "InspectionRun", run.getId().toString());
-        return run;
+        return toResponse(inspectionRepo.save(run));
     }
 
-    // ── Save answers (idempotent upsert) ─────────────────────────────────────
+    // =========================================================
+    // SAVE ANSWERS
+    // =========================================================
+    public InspectionDto.InspectionResponse saveAnswers(
+            UUID inspectionId,
+            List<InspectionDto.AnswerItem> answers
+    ) {
 
-    @Transactional
-    public InspectionRun saveAnswers(UUID inspectionId, AnswerBatch batch, String inspector) {
-        InspectionRun run = getOpenRun(inspectionId, inspector);
-
-        Map<UUID, InspectionAnswer> existing = new HashMap<>();
-        run.getAnswers().forEach(a -> existing.put(a.getQuestionId(), a));
-
-        for (AnswerItem item : batch.answers()) {
-            InspectionAnswer ans = existing.computeIfAbsent(item.questionId(),
-                    qid -> InspectionAnswer.builder()
-                            .inspection(run)
-                            .questionId(qid)
-                            .answer(item.answer())
-                            .note(item.note())
-                            .build());
-            ans.setAnswer(item.answer());
-            ans.setNote(item.note());
-        }
+        InspectionRun run = getRun(inspectionId);
 
         run.getAnswers().clear();
-        run.getAnswers().addAll(existing.values());
-        return inspectionRunRepo.save(run);
-    }
 
-    // ── Submit ────────────────────────────────────────────────────────────────
+        for (InspectionDto.AnswerItem item : answers) {
 
-    @Transactional
-    public InspectionRun submit(UUID inspectionId, SubmitRequest req, String inspector) {
-        InspectionRun run = getOpenRun(inspectionId, inspector);
-
-        String outcome = determineOutcome(run);
-        run.setOutcome(outcome);
-        run.setSummaryNote(req.summaryNote());
-        run.setSubmittedAt(OffsetDateTime.now());
-
-        // Close task
-        run.getTask().setStatus("COMPLETED");
-        taskRepo.save(run.getTask());
-
-        // Update entity summary
-        EntityMaster entity = run.getEntity();
-        entity.setLastInspectionAt(run.getSubmittedAt());
-        entity.setLastInspectionResult(outcome);
-        entityRepo.save(entity);
-
-        // Approval or direct Oracle push
-        boolean needsApproval = true;
-        if (needsApproval) {
-            // Create DB approval record for portal queue
-            ApprovalRequest approval = ApprovalRequest.builder()
+            InspectionAnswer ans = InspectionAnswer.builder()
                     .inspection(run)
-                    .requiredLevel("SUPERVISOR")
-                    .status("PENDING")
+                    .questionId(item.questionId())
+                    .answer(item.answer())
+                    .note(item.note())
                     .build();
-            run.getApprovalRequests().add(approval);
 
-            // Also kick off the Flowable process — handles notice generation
-            // and Oracle push as service tasks within the BPMN
-            try {
-                String noticeType = deriveNoticeType(run);
-                workflowService.startInspectionProcess(
-                        0,                                       // fine resolved by approval
-                        run.getId().toString(),
-                        entity.getId().toString(),
-                        outcome,
-                        noticeType,
-                        inspector
-                );
-            } catch (Exception ex) {
-                // Flowable failure must not roll back the inspection submission
-                auditService.log(inspector, "WORKFLOW_START_FAILED", "InspectionRun",
-                        inspectionId.toString(),
-                        Map.of("error", ex.getMessage()), null);
-            }
-
-        } else if ("ORACLE".equals(entity.getSourceSystem())) {
-            // PASS with Oracle source — direct outbox push, no approval needed
-//            pushOracleService.enqueue("RESULT_UPDATE", entity, inspectionId, outcome);
+            run.getAnswers().add(ans);
         }
 
-        run = inspectionRunRepo.save(run);
-        auditService.log(inspector, "SUBMIT", "InspectionRun", inspectionId.toString(),
-                Map.of("outcome", outcome), null);
-        return run;
+        return toResponse(inspectionRepo.save(run));
     }
 
-    // ── Queries ───────────────────────────────────────────────────────────────
+    // =========================================================
+    // SUBMIT INSPECTION (CORE ENGINE)
+    // =========================================================
+    public InspectionDto.InspectionResponse submit(
+            UUID inspectionId,
+            String actor,
+            String summaryNote
+    ) {
 
-    public InspectionRun findById(UUID id) {
-        return inspectionRunRepo.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Inspection not found: " + id));
+        InspectionRun run = getRun(inspectionId);
+
+        if (run.getSubmittedAt() != null) {
+            throw new IllegalStateException("Already submitted");
+        }
+
+        Task task = run.getTask();
+        EntityMaster entity = run.getEntity();
+
+        // ───────────── 1. OUTCOME ─────────────
+
+        int failCount = 0;
+
+        for (InspectionAnswer ans : run.getAnswers()) {
+
+            ChecklistQuestion q = checklistService.getQuestion(ans.getQuestionId());
+
+            if (q.getRule() != null && "FAIL".equalsIgnoreCase(ans.getAnswer())) {
+                failCount++;
+            }
+        }
+
+        String outcome;
+        if (failCount == 0) {
+            outcome = "PASS";
+        } else if (failCount <= 2) {
+            outcome = "CONDITIONAL";
+        } else {
+            outcome = "FAIL";
+        }
+
+        run.setOutcome(outcome);
+        run.setSubmittedAt(OffsetDateTime.now());
+        run.setSummaryNote(summaryNote);
+
+        // ───────────── 2. ENTITY UPDATE ─────────────
+
+        entity.setLastInspectionAt(run.getSubmittedAt());
+        entity.setLastInspectionResult(outcome);
+
+        // ───────────── 3. PHASE PROGRESSION ─────────────
+
+        String nextPhase = phaseResolverService.resolveNextPhase(
+                entity.getDirectorate(),
+                entity.getCategory(),
+                task.getPhase(),
+                outcome
+        );
+
+        // ───────────── 4. NEXT TASK ─────────────
+
+        if (nextPhase != null && !nextPhase.isBlank()) {
+
+            Task newTask = Task.builder()
+                    .entity(entity)
+                    .taskType("REINSPECTION")
+                    .phase(nextPhase)
+                    .subtype("AUTO")
+                    .assignedTo("") // TODO: assign properly
+                    .status("PENDING")
+                    .priority("MEDIUM")
+                    .sourceSystem(entity.getSourceSystem())
+                    .build();
+
+            taskRepo.save(newTask);
+        }
+
+        // ───────────── 5. COMPLETE TASK ─────────────
+
+        task.setStatus("COMPLETED");
+        taskRepo.save(task);
+
+        // ───────────── 6. WORKFLOW ─────────────
+
+        int fine = failCount * 50;
+
+        String noticeType = switch (outcome) {
+            case "FAIL" -> "FINE";
+            case "CONDITIONAL" -> "WARNING";
+            default -> "WARNING";
+        };
+
+        workflowService.startInspectionProcess(
+                fine,
+                run.getId().toString(),
+                entity.getId().toString(),
+                outcome,
+                noticeType,
+                actor
+        );
+
+        // ───────────── 7. SAVE + AUDIT ─────────────
+
+        run = inspectionRepo.save(run);
+
+        auditService.log(actor, "SUBMIT_INSPECTION",
+                "InspectionRun", run.getId().toString());
+
+        return toResponse(run);
+    }
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private InspectionRun getRun(UUID id) {
+        return inspectionRepo.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Inspection not found"));
     }
 
     public List<InspectionRun> findByEntity(UUID entityId) {
-        return inspectionRunRepo.findByEntityIdOrderByStartedAtDesc(entityId);
+        return inspectionRepo.findByEntityIdOrderByStartedAtDesc(entityId);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    private InspectionDto.InspectionResponse toResponse(InspectionRun run) {
 
-    private InspectionRun getOpenRun(UUID id, String inspector) {
-        InspectionRun run = findById(id);
-        if (run.getSubmittedAt() != null) {
-            throw new IllegalStateException("Inspection already submitted: " + id);
-        }
-        if (!run.getStartedBy().equals(inspector)) {
-            throw new SecurityException("Not authorised to modify this inspection");
-        }
-        return run;
-    }
-
-    private String determineOutcome(InspectionRun run) {
-        boolean anyFail = run.getAnswers().stream().anyMatch(a ->
-                "FAIL".equalsIgnoreCase(a.getAnswer()) ||
-                        "NO".equalsIgnoreCase(a.getAnswer()));
-        return anyFail ? "FAIL" : "PASS";
-    }
-
-    /**
-     * Simple heuristic: any CRITICAL answer → CLOSURE, else FINE.
-     */
-    private String deriveNoticeType(InspectionRun run) {
-        boolean hasCritical = run.getAnswers().stream()
-                .anyMatch(a -> "FAIL".equalsIgnoreCase(a.getAnswer()) &&
-                        a.getNote() != null &&
-                        a.getNote().toUpperCase().contains("CRITICAL"));
-        return hasCritical ? "CLOSURE" : "FINE";
+        return new InspectionDto.InspectionResponse(
+                run.getId(),
+                run.getTask().getId(),
+                run.getEntity().getId(),
+                run.getEntity().getName(),
+                run.getEntity().getExternalRef(),
+                run.getChecklistTemplateId(),
+                run.getChecklistVersion(),
+                run.getStartedBy(),
+                run.getStartedAt(),
+                run.getSubmittedAt(),
+                run.getOutcome(),
+                run.getSummaryNote(),
+                run.getAnswers().stream()
+                        .map(a -> new InspectionDto.AnswerItem(
+                                a.getQuestionId(),
+                                a.getAnswer(),
+                                a.getNote()
+                        ))
+                        .toList()
+        );
     }
 }

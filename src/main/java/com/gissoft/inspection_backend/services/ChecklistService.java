@@ -162,6 +162,11 @@ public class ChecklistService {
         return t;
     }
 
+    public ChecklistQuestion getQuestion(UUID questionId) {
+        return questionRepo.findById(questionId)
+                .orElseThrow(() -> new IllegalArgumentException("Question not found: " + questionId));
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────
 
     private void assertDraft(ChecklistTemplate t) {
@@ -170,4 +175,6 @@ public class ChecklistService {
                     "Template is not in DRAFT status — cannot modify: " + t.getId());
         }
     }
+
+
 }

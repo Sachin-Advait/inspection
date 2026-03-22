@@ -37,10 +37,13 @@ public class Task {
     /**
      * Phase name or operational sub-type e.g. Routine, Foundation, Traffic …
      */
-    @Column(name = "phase_or_subtype", nullable = false, length = 80)
-    private String phaseOrSubtype;
+    @Column(name = "phase", nullable = false, length = 80)
+    private String phase;
 
-    @Column(name = "assigned_to", nullable = false, length = 80)
+    @Column(name = "subtype", nullable = false, length = 80)
+    private String subtype;
+
+    @Column(name = "assigned_to", length = 80)
     private String assignedTo;
 
     /**

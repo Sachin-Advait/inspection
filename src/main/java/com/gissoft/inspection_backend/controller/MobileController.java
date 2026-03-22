@@ -1,6 +1,7 @@
 package com.gissoft.inspection_backend.controller;
 
 import com.gissoft.inspection_backend.dto.CreateTaskRequest;
+import com.gissoft.inspection_backend.dto.InspectionDto;
 import com.gissoft.inspection_backend.dto.InspectionDto.AnswerBatch;
 import com.gissoft.inspection_backend.dto.InspectionDto.StartRequest;
 import com.gissoft.inspection_backend.dto.InspectionDto.SubmitRequest;
@@ -138,34 +139,42 @@ public class MobileController {
      * POST /api/inspections/start
      */
     @PostMapping("/inspections/start")
-    public ResponseEntity<InspectionRun> startInspection(
+    public ResponseEntity<InspectionDto.InspectionResponse> startInspection(
             @Valid @RequestBody StartRequest req,
             @RequestParam(defaultValue = "inspector") String actor) {
-        return ResponseEntity.ok(inspectionService.start(req, actor));
+        return ResponseEntity.ok(
+                inspectionService.start(req.taskId(), actor)
+        );
     }
 
     /**
      * POST /api/inspections/{inspectionId}/answers
      */
     @PostMapping("/inspections/{inspectionId}/answers")
-    public ResponseEntity<InspectionRun> saveAnswers(
+    public ResponseEntity<InspectionDto.InspectionResponse> saveAnswers(
             @PathVariable UUID inspectionId,
             @Valid @RequestBody AnswerBatch batch,
             @RequestParam(defaultValue = "inspector") String actor) {
-        return ResponseEntity.ok(inspectionService.saveAnswers(inspectionId, batch, actor));
+        return ResponseEntity.ok(
+                inspectionService.saveAnswers(inspectionId, batch.answers())
+        );
     }
 
     /**
      * POST /api/inspections/{inspectionId}/submit
      */
     @PostMapping("/inspections/{inspectionId}/submit")
-    public ResponseEntity<InspectionRun> submitInspection(
+    public ResponseEntity<InspectionDto.InspectionResponse> submitInspection(
             @PathVariable UUID inspectionId,
             @RequestBody(required = false) SubmitRequest req,
             @RequestParam(defaultValue = "inspector") String actor) {
         return ResponseEntity.ok(
-                inspectionService.submit(inspectionId,
-                        req != null ? req : new SubmitRequest(null), actor));
+                inspectionService.submit(
+                        inspectionId,
+                        actor,
+                        req != null ? req.summaryNote() : null
+                )
+        );
     }
 
     /**

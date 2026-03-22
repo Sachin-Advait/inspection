@@ -19,7 +19,8 @@ public record CreateDemoTaskRequest(
 
         // ── Task fields ───────────────────────────────────────────────────────
         @NotBlank String taskType,          // INSPECTION | REINSPECTION | FOLLOW_UP
-        @NotBlank String phaseOrSubtype,    // Routine | Foundation | Traffic …
+        @NotBlank String phase,
+        @NotBlank String Subtype,  // Routine | Foundation | Traffic …
         @NotBlank String assignedTo,        // inspector username
         @NotNull  OffsetDateTime dueAt,
         String priority           // LOW | MEDIUM | HIGH | CRITICAL (default MEDIUM)

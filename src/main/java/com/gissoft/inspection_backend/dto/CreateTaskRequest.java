@@ -21,7 +21,10 @@ public class CreateTaskRequest {
     private String taskType;
 
     @NotBlank
-    private String phaseOrSubtype;
+    private String phase;
+
+    @NotBlank
+    private String subtype;
 
     @NotBlank
     private String assignedTo;

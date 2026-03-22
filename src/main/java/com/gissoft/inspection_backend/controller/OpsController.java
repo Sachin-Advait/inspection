@@ -365,7 +365,8 @@ public class OpsController {
                     row.put("taskId", t.getId());
                     row.put("entityRef", t.getEntity().getExternalRef());
                     row.put("entityName", t.getEntity().getName());
-                    row.put("type", t.getPhaseOrSubtype());
+                    row.put("phase", t.getPhase());
+                    row.put("subtype", t.getSubtype());
                     row.put("priority", t.getPriority());
                     row.put("status", "SLA_BREACH");
                     return row;

@@ -3,9 +3,11 @@ package com.gissoft.inspection_backend.services;
 import com.gissoft.inspection_backend.dto.PermitDto.CreatePermitRequest;
 import com.gissoft.inspection_backend.entity.EntityMaster;
 import com.gissoft.inspection_backend.entity.InternalPermit;
+import com.gissoft.inspection_backend.entity.PhaseConfig;
 import com.gissoft.inspection_backend.entity.Task;
 import com.gissoft.inspection_backend.repository.EntityMasterRepository;
 import com.gissoft.inspection_backend.repository.InternalPermitRepository;
+import com.gissoft.inspection_backend.repository.PhaseConfigRepository;
 import com.gissoft.inspection_backend.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -26,6 +28,7 @@ public class InternalPermitService {
     private final EntityMasterRepository   entityRepo;
     private final TaskRepository           taskRepo;
     private final AuditService             auditService;
+    private final PhaseConfigRepository phaseRepo;
 
     // ── Create permit (DRAFT) ─────────────────────────────────────────────────
 
@@ -80,10 +83,11 @@ public class InternalPermitService {
         permit.setEntityId(entity.getId());
         permit.setStatus("ACTIVE");
         permit.setActivatedAt(OffsetDateTime.now());
-        permit.setCurrentPhase(firstPhase(permit.getCategory()));
+        String firstPhase = firstPhase("TECHNICAL", permit.getCategory());
 
-        // Generate all phase tasks (unassigned — assigned later via Work Plans)
-        generatePhaseTasks(entity, permit.getCategory());
+        permit.setCurrentPhase(firstPhase);
+
+        createFirstTask(entity, "TECHNICAL", permit.getCategory());
 
         permit = permitRepo.save(permit);
         auditService.log(actor, "ACTIVATE", "InternalPermit", permitId.toString());
@@ -127,35 +131,31 @@ public class InternalPermitService {
         return prefix + "-" + year + "-" + seq;
     }
 
-    private String firstPhase(String category) {
-        return phases(category).get(0);
+
+    private String firstPhase(String dg, String category) {
+        return phaseRepo
+                .findByDirectorateAndCategoryAndActiveTrueOrderBySortOrderAsc(dg, category)
+                .stream()
+                .findFirst()
+                .map(PhaseConfig::getPhaseType)
+                .orElseThrow(() -> new IllegalStateException("No phases configured"));
     }
 
-    private List<String> phases(String category) {
-        return switch (category.toUpperCase()) {
-            case "ROAD"     -> List.of("Traffic", "Excavation", "Asphalt", "Restoration");
-            case "LIGHTS"   -> List.of("Base", "Cabling", "Install", "Commissioning");
-            case "BUILDING" -> List.of("Foundation", "Structural", "MEP", "Final");
-            default         -> List.of("Phase1");
-        };
-    }
+    private void createFirstTask(EntityMaster entity, String dg, String category) {
 
-    private void generatePhaseTasks(EntityMaster entity, String category) {
-        List<String> phaseList = phases(category);
-        OffsetDateTime base    = OffsetDateTime.now().plusDays(7);
+        String firstPhase = firstPhase(dg, category);
 
-        for (int i = 0; i < phaseList.size(); i++) {
-            Task task = Task.builder()
-                    .entity(entity)
-                    .taskType("INSPECTION")
-                    .phaseOrSubtype(phaseList.get(i))
-                    .assignedTo("")          // blank — assigned via Work Plan
-                    .status("PENDING")
-                    .dueAt(base.plusDays((long) i * 14))
-                    .priority("MEDIUM")
-                    .sourceSystem("INTERNAL")
-                    .build();
-            taskRepo.save(task);
-        }
+        Task task = Task.builder()
+                .entity(entity)
+                .taskType("INSPECTION")
+                .phase(firstPhase)
+                .subtype("INITIAL")
+                .assignedTo("")
+                .status("PENDING")
+                .priority("MEDIUM")
+                .sourceSystem("INTERNAL")
+                .build();
+
+        taskRepo.save(task);
     }
 }
