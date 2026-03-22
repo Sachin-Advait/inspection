@@ -49,9 +49,9 @@ public class AdminController {
 
     @GetMapping("/users/{id}")
     public ResponseEntity<AppUser> getUser(
-            @PathVariable UUID id,
+            @PathVariable String id,
             @RequestParam(defaultValue = "admin") String actor) {
-        return ResponseEntity.ok(userAdminService.findById(id));
+        return ResponseEntity.ok(userAdminService.findByUsername(id));
     }
 
     @PutMapping("/users/{id}")

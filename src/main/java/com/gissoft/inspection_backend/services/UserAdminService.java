@@ -19,8 +19,8 @@ import java.util.UUID;
 public class UserAdminService {
 
     private final AppUserRepository userRepo;
-    private final AuditService      auditService;
-    private final PasswordEncoder   passwordEncoder;
+    private final AuditService auditService;
+    private final PasswordEncoder passwordEncoder;
 
     // ── List ──────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,12 @@ public class UserAdminService {
         return userRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
     }
+
+    public AppUser findByUsername(String id) {
+        return userRepo.findByUsername(id)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
+    }
+
     public List<AppUser> getInspectors() {
         return userRepo.findByRoleAndActiveTrue("INSPECTOR");
     }
@@ -69,13 +75,13 @@ public class UserAdminService {
     public AppUser update(UUID id, UpdateUserRequest req, String actor) {
         AppUser user = findById(id);
 
-        if (req.role()               != null) user.setRole(req.role());
-        if (req.fullName()           != null) user.setFullName(req.fullName());
-        if (req.phone()              != null) user.setPhone(req.phone());
-        if (req.dgAccess()           != null) user.setDgAccess(req.dgAccess());
-        if (req.fineLimit()          != null) user.setFineLimit(req.fineLimit());
-        if (req.supervisorFineLimit()!= null) user.setSupervisorFineLimit(req.supervisorFineLimit());
-        if (req.managerFineLimit()   != null) user.setManagerFineLimit(req.managerFineLimit());
+        if (req.role() != null) user.setRole(req.role());
+        if (req.fullName() != null) user.setFullName(req.fullName());
+        if (req.phone() != null) user.setPhone(req.phone());
+        if (req.dgAccess() != null) user.setDgAccess(req.dgAccess());
+        if (req.fineLimit() != null) user.setFineLimit(req.fineLimit());
+        if (req.supervisorFineLimit() != null) user.setSupervisorFineLimit(req.supervisorFineLimit());
+        if (req.managerFineLimit() != null) user.setManagerFineLimit(req.managerFineLimit());
         user.setCanCloseCases(req.canCloseCases());
 
         if (req.newPassword() != null && !req.newPassword().isBlank()) {

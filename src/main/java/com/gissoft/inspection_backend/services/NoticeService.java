@@ -17,7 +17,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
@@ -54,7 +53,7 @@ public class NoticeService {
 
         try {
             Map uploadResult = cloudinary.uploader().upload(
-                    new ByteArrayInputStream(pdfBytes),
+                    pdfBytes,
                     ObjectUtils.asMap(
                             "resource_type", "raw",
                             "public_id", "notices/" + req.entityId() + "/" + noticeNo
@@ -110,12 +109,8 @@ public class NoticeService {
 
         if ("WHATSAPP".equals(channel)) {
             if (entity.getOwnerPhone() != null && !entity.getOwnerPhone().isBlank()) {
-                String phone = entity.getOwnerPhone().startsWith("+")
-                        ? entity.getOwnerPhone()
-                        : "+" + entity.getOwnerPhone();
-
-                providerMsgId = whatsAppService.sendMessage(phone, messageText);
-
+                providerMsgId = whatsAppService.sendMessage(
+                        entity.getOwnerPhone(), messageText);
                 deliveryStatus = providerMsgId != null ? "SENT" : "FAILED";
             } else {
                 log.warn("Cannot send WhatsApp — no phone number for entity: {}",
