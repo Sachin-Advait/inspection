@@ -3,6 +3,7 @@ package com.gissoft.inspection_backend.controller;
 import com.gissoft.inspection_backend.dto.CreateTaskRequest;
 import com.gissoft.inspection_backend.dto.InspectionDto;
 import com.gissoft.inspection_backend.dto.InspectionDto.AnswerBatch;
+import com.gissoft.inspection_backend.dto.InspectionDto.InspectionResponse;
 import com.gissoft.inspection_backend.dto.InspectionDto.StartRequest;
 import com.gissoft.inspection_backend.dto.InspectionDto.SubmitRequest;
 import com.gissoft.inspection_backend.dto.ReassignRequest;
@@ -44,7 +45,7 @@ public class MobileController {
     // =========================================================================
 
     /**
-     * GET /api/tasks/my?from=&to=
+     * GET /api/tasks/my?actor=&from=&to=
      */
     @GetMapping("/tasks/my")
     public ResponseEntity<List<Task>> getMyTasks(
@@ -54,6 +55,9 @@ public class MobileController {
         return ResponseEntity.ok(taskService.getMyTasks(actor, from, to));
     }
 
+    /**
+     * GET /api/tasks/{taskId}
+     */
     @GetMapping("/tasks/{taskId}")
     public ResponseEntity<Task> getTask(@PathVariable UUID taskId) {
         return ResponseEntity.ok(taskService.findById(taskId));
@@ -139,42 +143,45 @@ public class MobileController {
      * POST /api/inspections/start
      */
     @PostMapping("/inspections/start")
-    public ResponseEntity<InspectionDto.InspectionResponse> startInspection(
+    public ResponseEntity<InspectionResponse> startInspection(
             @Valid @RequestBody StartRequest req,
             @RequestParam(defaultValue = "inspector") String actor) {
-        return ResponseEntity.ok(
-                inspectionService.start(req.taskId(), actor)
-        );
+        return ResponseEntity.ok(inspectionService.start(req.taskId(), actor));
     }
 
     /**
      * POST /api/inspections/{inspectionId}/answers
      */
     @PostMapping("/inspections/{inspectionId}/answers")
-    public ResponseEntity<InspectionDto.InspectionResponse> saveAnswers(
+    public ResponseEntity<InspectionResponse> saveAnswers(
             @PathVariable UUID inspectionId,
             @Valid @RequestBody AnswerBatch batch,
             @RequestParam(defaultValue = "inspector") String actor) {
         return ResponseEntity.ok(
-                inspectionService.saveAnswers(inspectionId, batch.answers())
-        );
+                inspectionService.saveAnswers(inspectionId, batch.answers()));
     }
 
     /**
      * POST /api/inspections/{inspectionId}/submit
+     *
+     * FIX: old version called inspectionService.submit(inspectionId, actor, req.summaryNote())
+     * — wrong signature (actor and req swapped, only summaryNote extracted instead of
+     * passing the full SubmitRequest). The service needs the full SubmitRequest so it
+     * can read outcome, reinspectDate, nextDueDate, and followUpDate.
+     *
+     * FIX: req can be null when inspector submits with no body (e.g. simple PASS with
+     * no follow-up). Guard with a null-safe empty SubmitRequest.
      */
     @PostMapping("/inspections/{inspectionId}/submit")
-    public ResponseEntity<InspectionDto.InspectionResponse> submitInspection(
+    public ResponseEntity<InspectionResponse> submitInspection(
             @PathVariable UUID inspectionId,
             @RequestBody(required = false) SubmitRequest req,
             @RequestParam(defaultValue = "inspector") String actor) {
+        SubmitRequest safeReq = req != null
+                ? req
+                : new SubmitRequest(null, null, null, null, null);
         return ResponseEntity.ok(
-                inspectionService.submit(
-                        inspectionId,
-                        actor,
-                        req != null ? req.summaryNote() : null
-                )
-        );
+                inspectionService.submit(inspectionId, safeReq, actor));
     }
 
     /**

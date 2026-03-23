@@ -86,9 +86,15 @@ public class InspectionService {
     // =========================================================
     // SUBMIT INSPECTION
     // =========================================================
-    public InspectionRun submit(UUID inspectionId,
-                                SubmitRequest req,
-                                String actor) {
+
+    /**
+     * FIX 1: return type was SubmitRequest (the request DTO) — nonsensical.
+     *         Corrected to InspectionResponse, consistent with start() and
+     *         saveAnswers(), and matches what MobileController expects.
+     */
+    public InspectionResponse submit(UUID inspectionId,
+                                     SubmitRequest req,
+                                     String actor) {
 
         InspectionRun run = getRun(inspectionId);
 
@@ -96,7 +102,7 @@ public class InspectionService {
             throw new IllegalStateException("Already submitted");
         }
 
-        Task task = run.getTask();
+        Task task        = run.getTask();
         EntityMaster entity = run.getEntity();
 
         // ── 1. OUTCOME ────────────────────────────────────────────────────────
@@ -113,9 +119,9 @@ public class InspectionService {
                     })
                     .count();
 
-            if (failCount == 0) outcome = "PASS";
+            if      (failCount == 0) outcome = "PASS";
             else if (failCount <= 2) outcome = "CONDITIONAL";
-            else outcome = "FAIL";
+            else                     outcome = "FAIL";
         }
 
         run.setOutcome(outcome);
@@ -132,10 +138,10 @@ public class InspectionService {
             log.info("Next due updated for entity {}: {}", entity.getExternalRef(), req.nextDueDate());
         }
 
-        // ── 3. NEXT PHASE (automatic — phase resolver handles Technical + Licensing) ──
-        // Phase resolver determines the next structured phase (e.g. Foundation → Structural).
-        // This runs for Technical and Health Licensing flows.
-        // For reinspections set by inspector date, we create the task below instead.
+        // ── 3. NEXT PHASE RESOLUTION (informational only) ────────────────────
+        // FIX 2: auto task creation after phase complete is removed.
+        // We resolve the next phase only for logging / mobile display purposes.
+        // The supervisor creates the next phase task manually via Work Plans.
         String nextPhase = phaseResolverService.resolveNextPhase(
                 entity.getDirectorate(),
                 entity.getCategory(),
@@ -143,27 +149,15 @@ public class InspectionService {
                 outcome
         );
 
-        // ── 4. CREATE NEXT STRUCTURED PHASE TASK (if resolver found one) ─────
         if (nextPhase != null && !nextPhase.isBlank()) {
-            Task nextTask = Task.builder()
-                    .entity(entity)
-                    .taskType(task.getTaskType())
-                    .subtype(task.getSubtype())
-                    .phase(nextPhase)
-                    .assignedTo(task.getAssignedTo())
-                    .status("PENDING")
-                    .priority(task.getPriority())
-                    .sourceSystem(task.getSourceSystem())
-                    .dueAt(task.getDueAt())   // SLA carried from phase config
-                    .build();
-            taskRepo.save(nextTask);
-            log.info("Next phase task created: {} → {} for entity {}",
+            log.info("Next phase resolved: {} → {} for entity {} " +
+                            "(task creation suppressed — supervisor assigns via Work Plans)",
                     task.getPhase(), nextPhase, entity.getExternalRef());
         }
 
-        // ── 5. CREATE REINSPECTION TASK (inspector-set date, CONDITIONAL/FAIL) ──
-        // This is separate from the phase resolver — it's a manual follow-up
-        // date the inspector sets on the Outcome screen.
+        // ── 4. CREATE REINSPECTION TASK (inspector-set date) ─────────────────
+        // Explicit inspector action on the Outcome screen (CONDITIONAL / FAIL).
+        // This is NOT automatic phase progression — inspector picks the date.
         if (req.reinspectDate() != null) {
             Task reinspectTask = Task.builder()
                     .entity(entity)
@@ -180,7 +174,9 @@ public class InspectionService {
                     entity.getExternalRef(), req.reinspectDate());
         }
 
-        // ── 6. CREATE FOLLOW-UP TASK (Health Ops only) ───────────────────────
+        // ── 5. CREATE FOLLOW-UP TASK (Health Ops only) ───────────────────────
+        // Explicit inspector action on the Outcome screen.
+        // NOT automatic phase progression — inspector picks the date.
         if (req.followUpDate() != null) {
             Task followUpTask = Task.builder()
                     .entity(entity)
@@ -197,16 +193,13 @@ public class InspectionService {
                     entity.getExternalRef(), req.followUpDate());
         }
 
-        // ── 7. COMPLETE CURRENT TASK ──────────────────────────────────────────
+        // ── 6. COMPLETE CURRENT TASK ──────────────────────────────────────────
         task.setStatus("COMPLETED");
         taskRepo.save(task);
 
-        // ── 8. WORKFLOW (Flowable — notice generation + Oracle push) ─────────
-
-        // Real fine amount: read from the Notice already generated by the
-        // inspector on the Outcome screen (before Submit).
-        // If no notice was generated yet (PASS or inspector skipped it),
-        // fine = 0 — the BPMN outcome gateway will short-circuit to Oracle.
+        // ── 7. WORKFLOW (Flowable — notice generation + Oracle push) ─────────
+        // Real fine amount from the Notice already generated on the Outcome screen.
+        // fine = 0 for PASS — the BPMN gateway short-circuits to Oracle.
         long fineAmount = noticeRepo
                 .findByInspectionIdOrderByCreatedAtDesc(run.getId())
                 .stream()
@@ -214,8 +207,7 @@ public class InspectionService {
                 .mapToLong(n -> n.getFineAmount())
                 .sum();
 
-        // Real supervisor limit: from the inspector's AppUser profile.
-        // Admin sets this per user in the portal. Default 200 if not configured.
+        // Supervisor limit from the inspector's AppUser profile. Default 200.
         long supervisorLimit = userRepo.findByUsername(actor)
                 .map(u -> u.getSupervisorFineLimit() != null
                         ? u.getSupervisorFineLimit()
@@ -234,11 +226,12 @@ public class InspectionService {
                 supervisorLimit
         );
 
-        // ── 9. SAVE + AUDIT ───────────────────────────────────────────────────
+        // ── 8. SAVE + AUDIT ───────────────────────────────────────────────────
         run = inspectionRepo.save(run);
         auditService.log(actor, "SUBMIT_INSPECTION", "InspectionRun", run.getId().toString());
 
-        return run;
+        // FIX 1 (cont.): return toResponse(run) — not the raw InspectionRun entity
+        return toResponse(run);
     }
 
     // =========================================================
@@ -246,9 +239,9 @@ public class InspectionService {
     // =========================================================
     private ChecklistTemplate resolveChecklist(Task task) {
 
-        String dg = task.getEntity().getDirectorate();
+        String dg       = task.getEntity().getDirectorate();
         String category = task.getEntity().getCategory();
-        String phase = task.getPhase();
+        String phase    = task.getPhase();
 
         PhaseConfig phaseConfig = phaseRepo
                 .findByDirectorateAndCategoryAndPhaseType(dg, category, phase)
@@ -257,19 +250,20 @@ public class InspectionService {
 
         if (phaseConfig.getOverrideChecklistId() != null) {
             ChecklistTemplate checklist = checklistService.findById(phaseConfig.getOverrideChecklistId());
-            phaseConfig.setOverrideChecklistName(checklist.getName());  // ← sync
+            phaseConfig.setOverrideChecklistName(checklist.getName());
             phaseRepo.save(phaseConfig);
             return checklist;
         }
         if (phaseConfig.getDefaultChecklistId() != null) {
             ChecklistTemplate checklist = checklistService.findById(phaseConfig.getDefaultChecklistId());
-            phaseConfig.setDefaultChecklistName(checklist.getName());   // ← sync
+            phaseConfig.setDefaultChecklistName(checklist.getName());
             phaseRepo.save(phaseConfig);
             return checklist;
         }
 
         return checklistService.getActive(dg, category, phase);
     }
+
     // =========================================================
     // HELPERS
     // =========================================================
