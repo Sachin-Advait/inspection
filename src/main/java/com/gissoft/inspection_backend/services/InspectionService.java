@@ -256,15 +256,20 @@ public class InspectionService {
                         "Phase config not found: " + dg + "/" + category + "/" + phase));
 
         if (phaseConfig.getOverrideChecklistId() != null) {
-            return checklistService.findById(phaseConfig.getOverrideChecklistId());
+            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getOverrideChecklistId());
+            phaseConfig.setOverrideChecklistName(checklist.getName());  // ← sync
+            phaseRepo.save(phaseConfig);
+            return checklist;
         }
         if (phaseConfig.getDefaultChecklistId() != null) {
-            return checklistService.findById(phaseConfig.getDefaultChecklistId());
+            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getDefaultChecklistId());
+            phaseConfig.setDefaultChecklistName(checklist.getName());   // ← sync
+            phaseRepo.save(phaseConfig);
+            return checklist;
         }
 
         return checklistService.getActive(dg, category, phase);
     }
-
     // =========================================================
     // HELPERS
     // =========================================================

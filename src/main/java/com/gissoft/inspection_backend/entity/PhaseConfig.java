@@ -28,6 +28,11 @@ public class PhaseConfig {
     // 🔥 ADD THIS (IMPORTANT)
     private boolean supportsOperationalTypes;
 
-    private UUID defaultChecklistId;   // 🔥 default (auto-filled)
+    private Integer dueDays;
+
+    private UUID defaultChecklistId;
+    private String defaultChecklistName;     // ← add this
+
     private UUID overrideChecklistId;
+    private String overrideChecklistName;
 }

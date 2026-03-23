@@ -45,6 +45,7 @@ public class ChecklistService {
         int next = templateRepo.findMaxVersion(req.dg(), req.category(), req.phaseType()) + 1;
 
         ChecklistTemplate t = ChecklistTemplate.builder()
+                .name(req.name())
                 .dg(req.dg())
                 .category(req.category())
                 .phaseType(req.phaseType())
