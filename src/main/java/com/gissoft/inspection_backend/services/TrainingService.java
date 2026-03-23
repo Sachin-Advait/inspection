@@ -52,9 +52,8 @@ public class TrainingService {
 
             for (String username : request.getUsernames()) {
 
-                boolean alreadyAssigned =
-                        assignmentRepo.findByUserIdAndTrainingId(username, savedMaterial.getId())
-                                .isPresent();
+                boolean alreadyAssigned = assignmentRepo.findByUsernameAndTrainingId(username, savedMaterial.getId())
+                        .isPresent();
 
                 if (alreadyAssigned) continue;
 
@@ -91,7 +90,7 @@ public class TrainingService {
         for (String userId : userIds) {
 
             boolean alreadyAssigned =
-                    assignmentRepo.findByUserIdAndTrainingId(userId, trainingId).isPresent();
+                    assignmentRepo.findByUsernameAndTrainingId(userId, trainingId).isPresent();
 
             if (alreadyAssigned) continue;
 
@@ -116,12 +115,12 @@ public class TrainingService {
        ====================================================== */
 
     public List<TrainingAssignment> getUserTrainings(String userId) {
-        return assignmentRepo.findByUserId(userId);
+        return assignmentRepo.findByUsername(userId);
     }
 
     public List<UserTrainingDTO> getUserTrainingDetails(String userId) {
 
-        List<TrainingAssignment> assignments = assignmentRepo.findByUserId(userId);
+        List<TrainingAssignment> assignments = assignmentRepo.findByUsername(userId);
 
         return assignments.stream()
                 .map(a -> {
@@ -148,10 +147,10 @@ public class TrainingService {
                 .toList();
     }
 
-    public TrainingAssignment updateProgress(String userId, Long trainingId, int progress) {
+    public TrainingAssignment updateProgress(String username, Long trainingId, int progress) {
 
         TrainingAssignment assignment =
-                assignmentRepo.findByUserIdAndTrainingId(userId, trainingId)
+                assignmentRepo.findByUsernameAndTrainingId(username, trainingId)
                         .orElseThrow(() -> new RuntimeException("Training not assigned"));
 
         if (progress > assignment.getProgress()) {

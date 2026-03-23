@@ -42,7 +42,7 @@ public class TrainingController {
             @RequestBody Map<String, Object> payload) {
 
         Long trainingId = Long.valueOf(payload.get("trainingId").toString());
-        List<String> userIds = (List<String>) payload.get("userIds");
+        List<String> userIds = (List<String>) payload.get("usernames");
         Instant dueDate = Instant.parse(payload.get("dueDate").toString());
 
         trainingService.assignTraining(trainingId, userIds, dueDate);
@@ -64,12 +64,12 @@ public class TrainingController {
     public ResponseEntity<TrainingAssignment> updateProgress(
             @RequestBody Map<String, Object> payload) {
 
-        String userId = payload.get("userId").toString();
+        String username = payload.get("username").toString();
         Long trainingId = Long.valueOf(payload.get("trainingId").toString());
-        Integer progress = Integer.valueOf(payload.get("progress").toString());
+        int progress = Integer.parseInt(payload.get("progress").toString());
 
         TrainingAssignment updated =
-                trainingService.updateProgress(userId, trainingId, progress);
+                trainingService.updateProgress(username, trainingId, progress);
 
         return ResponseEntity.ok(updated);
     }

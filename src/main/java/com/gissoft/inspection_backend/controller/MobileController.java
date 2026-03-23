@@ -1,7 +1,6 @@
 package com.gissoft.inspection_backend.controller;
 
 import com.gissoft.inspection_backend.dto.CreateTaskRequest;
-import com.gissoft.inspection_backend.dto.InspectionDto;
 import com.gissoft.inspection_backend.dto.InspectionDto.AnswerBatch;
 import com.gissoft.inspection_backend.dto.InspectionDto.InspectionResponse;
 import com.gissoft.inspection_backend.dto.InspectionDto.StartRequest;
@@ -141,6 +140,7 @@ public class MobileController {
         checklistService.deleteSection(sectionId, actor);
         return ResponseEntity.noContent().build();
     }
+
     @DeleteMapping("/checklists/templates/{templateId}")
     public ResponseEntity<Void> deleteTemplate(
             @PathVariable UUID templateId,
@@ -149,6 +149,7 @@ public class MobileController {
         checklistService.deleteTemplate(templateId, actor);
         return ResponseEntity.noContent().build();
     }
+
     /**
      * GET /api/checklists/active?dg=&category=&phaseType=
      */
@@ -188,13 +189,13 @@ public class MobileController {
 
     /**
      * POST /api/inspections/{inspectionId}/submit
-     *
+     * <p>
      * FIX: old version called inspectionService.submit(inspectionId, actor, req.summaryNote())
      * — wrong signature (actor and req swapped, only summaryNote extracted instead of
      * passing the full SubmitRequest). The service needs the full SubmitRequest so it
      * can read outcome, reinspectDate, nextDueDate, and followUpDate.
-     *
-     * FIX: req can be null when inspector submits with nobody (e.g. simple PASS with
+     * <p>
+     * FIX: req can be null when inspector submits with no body (e.g. simple PASS with
      * no follow-up). Guard with a null-safe empty SubmitRequest.
      */
     @PostMapping("/inspections/{inspectionId}/submit")
@@ -245,5 +246,10 @@ public class MobileController {
             @RequestParam(required = false) String fileType,
             Pageable pageable) {
         return ResponseEntity.ok(evidenceService.browse(entityId, fileType, pageable));
+    }
+
+    @GetMapping("/evidence/by-inspection/{inspectionId}")
+    public ResponseEntity<List<EvidenceFile>> browseEvidenceByInspection(@PathVariable UUID inspectionId) {
+        return ResponseEntity.ok(evidenceService.byInspection(inspectionId));
     }
 }

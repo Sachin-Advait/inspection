@@ -12,10 +12,10 @@ import java.time.Instant;
 @Table(
         name = "training_assignments",
         indexes = {
-                @Index(name = "idx_assignment_user", columnList = "user_id"),
+                @Index(name = "idx_assignment_user", columnList = "username"),
                 @Index(name = "idx_assignment_training", columnList = "training_id"),
                 @Index(name = "idx_assignment_status", columnList = "status"),
-                @Index(name = "idx_assignment_user_training", columnList = "user_id, training_id")
+                @Index(name = "idx_assignment_user_training", columnList = "username, training_id")
         }
 )
 @Data

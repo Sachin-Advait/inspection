@@ -13,7 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -39,10 +42,13 @@ public class InspectionService {
         Task task = taskRepo.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
-        inspectionRepo.findByTaskIdAndSubmittedAtIsNull(taskId)
-                .ifPresent(i -> {
-                    throw new IllegalStateException("Inspection already in progress");
-                });
+        Optional<InspectionRun> existing =
+                inspectionRepo.findByTaskIdAndSubmittedAtIsNull(taskId);
+
+        if (existing.isPresent()) {
+            // ✅ RETURN EXISTING instead of error
+            return toResponse(existing.get());
+        }
 
         ChecklistTemplate checklist = resolveChecklist(task);
 
@@ -61,23 +67,37 @@ public class InspectionService {
         return toResponse(inspectionRepo.save(run));
     }
 
-    // =========================================================
-    // SAVE ANSWERS
-    // =========================================================
     public InspectionResponse saveAnswers(UUID inspectionId,
                                           List<AnswerItem> answers) {
 
         InspectionRun run = getRun(inspectionId);
 
-        run.getAnswers().clear();
+        Map<UUID, InspectionAnswer> existingAnswers =
+                run.getAnswers().stream()
+                        .collect(Collectors.toMap(
+                                InspectionAnswer::getQuestionId,
+                                a -> a
+                        ));
 
         for (AnswerItem item : answers) {
-            run.getAnswers().add(InspectionAnswer.builder()
-                    .inspection(run)
-                    .questionId(item.questionId())
-                    .answer(item.answer())
-                    .note(item.note())
-                    .build());
+
+            InspectionAnswer existing = existingAnswers.get(item.questionId());
+
+            if (existing != null) {
+                // ✅ UPDATE existing
+                existing.setAnswer(item.answer());
+                existing.setNote(item.note());
+            } else {
+                // ✅ INSERT new
+                run.getAnswers().add(
+                        InspectionAnswer.builder()
+                                .inspection(run)
+                                .questionId(item.questionId())
+                                .answer(item.answer())
+                                .note(item.note())
+                                .build()
+                );
+            }
         }
 
         return toResponse(inspectionRepo.save(run));
@@ -96,7 +116,7 @@ public class InspectionService {
             throw new IllegalStateException("Already submitted");
         }
 
-        Task         task   = run.getTask();
+        Task task = run.getTask();
         EntityMaster entity = run.getEntity();
 
         // ── 1. OUTCOME ────────────────────────────────────────────────────────
@@ -113,9 +133,9 @@ public class InspectionService {
                     })
                     .count();
 
-            if      (failCount == 0) outcome = "PASS";
+            if (failCount == 0) outcome = "PASS";
             else if (failCount <= 2) outcome = "CONDITIONAL";
-            else                     outcome = "FAIL";
+            else outcome = "FAIL";
         }
 
         run.setOutcome(outcome);
@@ -146,8 +166,6 @@ public class InspectionService {
                 task.getPhase(),
                 outcome
         );
-
-
 
 
         if (nextPhase != null && !nextPhase.isBlank()) {
@@ -255,9 +273,9 @@ public class InspectionService {
     // =========================================================
     private ChecklistTemplate resolveChecklist(Task task) {
 
-        String dg       = task.getEntity().getDirectorate();
+        String dg = task.getEntity().getDirectorate();
         String category = task.getEntity().getCategory();
-        String phase    = task.getPhase();
+        String phase = task.getPhase();
 
         PhaseConfig phaseConfig = phaseRepo
                 .findByDirectorateAndCategoryAndPhaseType(dg, category, phase)

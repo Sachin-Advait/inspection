@@ -11,11 +11,11 @@ import java.util.Optional;
 public interface TrainingAssignmentRepository
         extends JpaRepository<TrainingAssignment, Long> {
 
-    List<TrainingAssignment> findByUserId(String userId);
+    List<TrainingAssignment> findByUsername(String userId);
 
     List<TrainingAssignment> findByTrainingId(Long trainingId);
 
-    Optional<TrainingAssignment> findByUserIdAndTrainingId(
+    Optional<TrainingAssignment> findByUsernameAndTrainingId(
             String userId,
             Long trainingId
     );
