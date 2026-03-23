@@ -14,7 +14,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -73,8 +75,14 @@ public class TaskService {
         String old = task.getAssignedTo();
         task.setAssignedTo(newAssignee);
         task = taskRepo.save(task);
-        auditService.log(actor, "REASSIGN", "Task", taskId.toString(),
-                java.util.Map.of("from", old, "to", newAssignee), null);
+
+        // 🔥 FIX HERE
+        Map<String, Object> changes = new HashMap<>();
+        changes.put("from", old);
+        changes.put("to", newAssignee);
+
+        auditService.log(actor, "REASSIGN", "Task", taskId.toString(), changes, null);
+
         return task;
     }
 
