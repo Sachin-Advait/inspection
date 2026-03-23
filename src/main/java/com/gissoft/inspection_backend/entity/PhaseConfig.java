@@ -26,5 +26,8 @@ public class PhaseConfig {
     private String nextPhaseOnFail;
 
     // 🔥 ADD THIS (IMPORTANT)
-    private boolean supportsOperationalTypes; // true ONLY for HEALTH phases
+    private boolean supportsOperationalTypes;
+
+    private UUID defaultChecklistId;   // 🔥 default (auto-filled)
+    private UUID overrideChecklistId;
 }

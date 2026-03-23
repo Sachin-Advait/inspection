@@ -21,6 +21,7 @@ public class InspectionService {
     private final TaskRepository taskRepo;
     private final ChecklistService checklistService;
     private final PhaseResolverService phaseResolverService;
+    private final PhaseConfigRepository phaseRepo;
     private final WorkflowService workflowService;
     private final AuditService auditService;
 
@@ -37,11 +38,7 @@ public class InspectionService {
                     throw new IllegalStateException("Inspection already in progress");
                 });
 
-        ChecklistTemplate checklist = checklistService.getActive(
-                task.getEntity().getDirectorate(),
-                task.getEntity().getCategory(),
-                task.getPhase()
-        );
+        ChecklistTemplate checklist = resolveChecklist(task);
 
         InspectionRun run = InspectionRun.builder()
                 .task(task)
@@ -86,7 +83,7 @@ public class InspectionService {
     }
 
     // =========================================================
-    // SUBMIT INSPECTION (CORE ENGINE)
+    // SUBMIT INSPECTION
     // =========================================================
     public InspectionDto.InspectionResponse submit(
             UUID inspectionId,
@@ -103,8 +100,7 @@ public class InspectionService {
         Task task = run.getTask();
         EntityMaster entity = run.getEntity();
 
-        // ───────────── 1. OUTCOME ─────────────
-
+        // 🔹 1. OUTCOME
         int failCount = 0;
 
         for (InspectionAnswer ans : run.getAnswers()) {
@@ -117,25 +113,19 @@ public class InspectionService {
         }
 
         String outcome;
-        if (failCount == 0) {
-            outcome = "PASS";
-        } else if (failCount <= 2) {
-            outcome = "CONDITIONAL";
-        } else {
-            outcome = "FAIL";
-        }
+        if (failCount == 0) outcome = "PASS";
+        else if (failCount <= 2) outcome = "CONDITIONAL";
+        else outcome = "FAIL";
 
         run.setOutcome(outcome);
         run.setSubmittedAt(OffsetDateTime.now());
         run.setSummaryNote(summaryNote);
 
-        // ───────────── 2. ENTITY UPDATE ─────────────
-
+        // 🔹 2. ENTITY UPDATE
         entity.setLastInspectionAt(run.getSubmittedAt());
         entity.setLastInspectionResult(outcome);
 
-        // ───────────── 3. PHASE PROGRESSION ─────────────
-
+        // 🔹 3. NEXT PHASE
         String nextPhase = phaseResolverService.resolveNextPhase(
                 entity.getDirectorate(),
                 entity.getCategory(),
@@ -143,8 +133,7 @@ public class InspectionService {
                 outcome
         );
 
-        // ───────────── 4. NEXT TASK ─────────────
-
+        // 🔹 4. CREATE NEXT TASK
         if (nextPhase != null && !nextPhase.isBlank()) {
 
             Task newTask = Task.builder()
@@ -152,7 +141,7 @@ public class InspectionService {
                     .taskType("REINSPECTION")
                     .phase(nextPhase)
                     .subtype("AUTO")
-                    .assignedTo("") // TODO: assign properly
+                    .assignedTo("") // assign later
                     .status("PENDING")
                     .priority("MEDIUM")
                     .sourceSystem(entity.getSourceSystem())
@@ -161,13 +150,11 @@ public class InspectionService {
             taskRepo.save(newTask);
         }
 
-        // ───────────── 5. COMPLETE TASK ─────────────
-
+        // 🔹 5. COMPLETE CURRENT TASK
         task.setStatus("COMPLETED");
         taskRepo.save(task);
 
-        // ───────────── 6. WORKFLOW ─────────────
-
+        // 🔹 6. WORKFLOW
         int fine = failCount * 50;
 
         String noticeType = switch (outcome) {
@@ -185,8 +172,7 @@ public class InspectionService {
                 actor
         );
 
-        // ───────────── 7. SAVE + AUDIT ─────────────
-
+        // 🔹 7. SAVE + AUDIT
         run = inspectionRepo.save(run);
 
         auditService.log(actor, "SUBMIT_INSPECTION",
@@ -196,9 +182,32 @@ public class InspectionService {
     }
 
     // =========================================================
+    // CHECKLIST RESOLUTION (CORE LOGIC)
+    // =========================================================
+    private ChecklistTemplate resolveChecklist(Task task) {
+
+        String dg = task.getEntity().getDirectorate();
+        String category = task.getEntity().getCategory();
+        String phase = task.getPhase();
+
+        PhaseConfig phaseConfig = phaseRepo
+                .findByDirectorateAndCategoryAndPhaseType(dg, category, phase)
+                .orElseThrow(() -> new IllegalArgumentException("Phase not found"));
+
+        if (phaseConfig.getOverrideChecklistId() != null) {
+            return checklistService.findById(phaseConfig.getOverrideChecklistId());
+        }
+
+        if (phaseConfig.getDefaultChecklistId() != null) {
+            return checklistService.findById(phaseConfig.getDefaultChecklistId());
+        }
+
+        return checklistService.getActive(dg, category, phase);
+    }
+
+    // =========================================================
     // HELPERS
     // =========================================================
-
     private InspectionRun getRun(UUID id) {
         return inspectionRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Inspection not found"));
@@ -209,7 +218,6 @@ public class InspectionService {
     }
 
     private InspectionDto.InspectionResponse toResponse(InspectionRun run) {
-
         return new InspectionDto.InspectionResponse(
                 run.getId(),
                 run.getTask().getId(),

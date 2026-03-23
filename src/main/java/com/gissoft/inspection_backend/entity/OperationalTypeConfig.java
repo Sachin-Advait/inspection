@@ -4,7 +4,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import lombok.Data;
-
 import java.util.UUID;
 
 @Entity
@@ -15,18 +14,18 @@ public class OperationalTypeConfig {
     @GeneratedValue
     private UUID id;
 
-    private String directorate;   // HEALTH
+    private String directorate;
     private String category;
+    private String phaseType;
 
-    private String phaseType;     // 🔥 LINK TO PHASE
-
-    private String type;          // ROUTINE / RANDOM / COMPLAINT / FOLLOW_UP
+    private String type;
 
     private Integer frequencyDays;
     private Integer dueAfterDays;
 
-    private String defaultChecklist;
     private String priority;
-
     private boolean active;
+
+    // ✅ ADD THIS
+    private UUID checklistTemplateId;
 }
