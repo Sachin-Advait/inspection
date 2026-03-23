@@ -9,6 +9,7 @@ import java.util.UUID;
 public class ChecklistDto {
 
     public record CreateTemplateRequest(
+            @NotBlank String name,
             @NotBlank String dg,
             @NotBlank String category,
             @NotBlank String phaseType

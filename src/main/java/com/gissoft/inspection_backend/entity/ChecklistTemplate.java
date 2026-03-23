@@ -26,6 +26,9 @@ public class ChecklistTemplate {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(nullable = false, length = 200)
+    private String name;
+
     @Column(nullable = false, length = 20)
     private String dg;
 

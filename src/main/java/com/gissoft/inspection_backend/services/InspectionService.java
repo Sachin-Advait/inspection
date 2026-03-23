@@ -133,30 +133,32 @@ public class InspectionService {
                 outcome
         );
 
-        // 🔹 4. CREATE NEXT TASK
-        // 🔹 4. CREATE NEXT TASK
         if (nextPhase != null && !nextPhase.isBlank()) {
 
+            PhaseConfig nextPhaseConfig = phaseRepo
+                    .findByDirectorateAndCategoryAndPhaseType(
+                            entity.getDirectorate(),
+                            entity.getCategory(),
+                            nextPhase
+                    )
+                    .orElseThrow(() -> new IllegalStateException(
+                            "No PhaseConfig found for next phase: " + nextPhase
+                    ));
 
+            OffsetDateTime dueAt = nextPhaseConfig.getDueDays() != null
+                    ? OffsetDateTime.now().plusDays(nextPhaseConfig.getDueDays())
+                    : OffsetDateTime.now().plusDays(30);
 
-            Task newTask = Task.builder()
-                    .entity(entity)
-                    .taskType(task.getTaskType())         // carry over from current task
-                    .phase(nextPhase)                     // only this changes
-                    .subtype(task.getSubtype())           // carry over
-                    .assignedTo(task.getAssignedTo())     // carry over — same inspector
-                    .status("PENDING")                    // always fresh
-                    .priority(task.getPriority())         // carry over
-                    .sourceSystem(task.getSourceSystem()) // already doing this via entity, but cleaner from task
-                    .dueAt(task.getDueAt())                     // computed from phase config SLA
-                    .build();
+            task.setPhase(nextPhase);
+            task.setStatus("PENDING");
+            task.setDueAt(dueAt);
+            taskRepo.save(task);
 
-            taskRepo.save(newTask);
+        } else {
+            // No next phase — genuinely close the task
+            task.setStatus("COMPLETED");
+            taskRepo.save(task);
         }
-
-        // 🔹 5. COMPLETE CURRENT TASK
-        task.setStatus("COMPLETED");
-        taskRepo.save(task);
 
         // 🔹 6. WORKFLOW
         int fine = failCount * 50;
@@ -199,16 +201,21 @@ public class InspectionService {
                 .orElseThrow(() -> new IllegalArgumentException("Phase not found"));
 
         if (phaseConfig.getOverrideChecklistId() != null) {
-            return checklistService.findById(phaseConfig.getOverrideChecklistId());
+            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getOverrideChecklistId());
+            phaseConfig.setOverrideChecklistName(checklist.getName());  // ← sync
+            phaseRepo.save(phaseConfig);
+            return checklist;
         }
 
         if (phaseConfig.getDefaultChecklistId() != null) {
-            return checklistService.findById(phaseConfig.getDefaultChecklistId());
+            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getDefaultChecklistId());
+            phaseConfig.setDefaultChecklistName(checklist.getName());   // ← sync
+            phaseRepo.save(phaseConfig);
+            return checklist;
         }
 
         return checklistService.getActive(dg, category, phase);
     }
-
     // =========================================================
     // HELPERS
     // =========================================================
