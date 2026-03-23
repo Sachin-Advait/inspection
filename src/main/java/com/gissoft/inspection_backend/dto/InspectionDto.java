@@ -14,41 +14,55 @@ public class InspectionDto {
 
     public record StartRequest(
             @NotNull UUID taskId
-    ) {}
+    ) {
+    }
 
     // ── Save answers ─────────────────────────────────────────────────────────
 
     public record AnswerBatch(
             @NotEmpty List<AnswerItem> answers
-    ) {}
+    ) {
+    }
 
     public record AnswerItem(
-            @NotNull  UUID   questionId,
+            @NotNull UUID questionId,
             @NotBlank String answer,
             String note
-    ) {}
+    ) {
+    }
 
     // ── Submit ───────────────────────────────────────────────────────────────
+    // outcome       — inspector-confirmed: PASS | CONDITIONAL | FAIL
+    // summaryNote   — auto-generated from violation count
+    // reinspectDate — CONDITIONAL/FAIL: backend creates a new follow-up task
+    // nextDueDate   — Health Operational: next scheduled inspection
+    // followUpDate  — Health Operational CONDITIONAL/FAIL follow-up
 
     public record SubmitRequest(
-            String summaryNote
-    ) {}
+            String outcome,
+            String summaryNote,
+            OffsetDateTime reinspectDate,
+            OffsetDateTime nextDueDate,
+            OffsetDateTime followUpDate
+    ) {
+    }
 
     // ── Response ─────────────────────────────────────────────────────────────
 
     public record InspectionResponse(
-            UUID   id,
-            UUID   taskId,
-            UUID   entityId,
+            UUID id,
+            UUID taskId,
+            UUID entityId,
             String entityName,
             String entityRef,
-            UUID   checklistTemplateId,
-            int    checklistVersion,
+            UUID checklistTemplateId,
+            int checklistVersion,
             String startedBy,
             OffsetDateTime startedAt,
             OffsetDateTime submittedAt,
             String outcome,
             String summaryNote,
             List<AnswerItem> answers
-    ) {}
+    ) {
+    }
 }
