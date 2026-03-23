@@ -1,98 +1,213 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://gissoft.com/inspection">
 
-<definitions
-        xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xmlns:flowable="http://flowable.org/bpmn"
-        targetNamespace="http://www.flowable.org/processdef">
+    <process id="permit_inspection_process_municipality"
+             name="Permit Inspection Process"
+             isExecutable="true">
 
-  <process
-          id="permit_inspection_process_municipality"
-          name="inspection-process-municipality"
-          isExecutable="true">
+        <!-- ── Start ──────────────────────────────────────────────────────────── -->
 
-    <startEvent id="startEvent1" name="Start"/>
+        <startEvent id="start" name="Inspection Submitted"/>
 
-    <userTask
-            id="inspectorTask"
-            name="Inspector Inspection"
-            flowable:candidateGroups="inspector"/>
+        <sequenceFlow id="flow_start_to_outcome_gw"
+                      sourceRef="start"
+                      targetRef="gw_outcome_check"/>
 
-    <sequenceFlow
-            id="flow1"
-            sourceRef="startEvent1"
-            targetRef="inspectorTask"/>
+        <!-- ── Gateway 0: PASS short-circuit ─────────────────────────────────── -->
+        <!--
+          PASS with no fine skips notice generation and approval entirely.
+          Goes straight to Oracle push (RESULT_UPDATE only, no enforcement).
+          CONDITIONAL / FAIL always go through notice + approval.
+        -->
 
-    <userTask
-            id="supervisorTask"
-            name="Supervisor Approval"
-            flowable:candidateGroups="supervisor"/>
+        <exclusiveGateway id="gw_outcome_check"
+                          name="Outcome Check"
+                          default="flow_needs_enforcement"/>
 
-    <sequenceFlow
-            id="flow2"
-            sourceRef="inspectorTask"
-            targetRef="supervisorTask"/>
+        <!-- PASS and no fine → skip straight to Oracle -->
+        <sequenceFlow id="flow_pass_direct"
+                      name="PASS"
+                      sourceRef="gw_outcome_check"
+                      targetRef="task_push_oracle">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${outcome == 'PASS' && fine == 0}]]>
+            </conditionExpression>
+        </sequenceFlow>
 
-    <exclusiveGateway
-            id="fineGateway"
-            name="Fine > Supervisor Limit?"
-            default="flowNo"/>
+        <!-- CONDITIONAL / FAIL (or PASS with fine) → full enforcement path -->
+        <sequenceFlow id="flow_needs_enforcement"
+                      name="CONDITIONAL/FAIL"
+                      sourceRef="gw_outcome_check"
+                      targetRef="task_generate_notice"/>
 
-    <sequenceFlow
-            id="flow3"
-            sourceRef="supervisorTask"
-            targetRef="fineGateway"/>
+        <!-- ── Step 1: Generate Notice (JavaDelegate → GenerateNoticeService) ── -->
 
-    <userTask
-            id="managerTask"
-            name="Manager Approval"
-            flowable:candidateGroups="manager"/>
+        <serviceTask id="task_generate_notice"
+                     name="Generate Notice"
+                     flowable:delegateExpression="${generateNoticeService}"/>
 
-    <sequenceFlow
-            id="flowYes"
-            name="yes"
-            sourceRef="fineGateway"
-            targetRef="managerTask">
+        <sequenceFlow id="flow_notice_to_fine_gw"
+                      sourceRef="task_generate_notice"
+                      targetRef="gw_fine_check"/>
 
-      <conditionExpression xsi:type="tFormalExpression">
-        <![CDATA[${fine > supervisorLimit}]]>
-      </conditionExpression>
+        <!-- ── Gateway 1: Route by fine amount ───────────────────────────────── -->
+        <!--
+          fine        = actual fine from the Notice already generated (set by inspector)
+          supervisorLimit = AppUser.supervisorFineLimit of the submitting inspector's org
+                            (passed as process variable at start from InspectionService)
 
-    </sequenceFlow>
+          fine <= supervisorLimit → Supervisor can approve
+          fine >  supervisorLimit → Must escalate to Manager
+        -->
 
-    <serviceTask
-            id="generateNotice"
-            name="Generate Notice"
-            flowable:class="com.gissoft.inspection_backend.workflow.GenerateNoticeService"/>
+        <exclusiveGateway id="gw_fine_check"
+                          name="Fine Amount Check"
+                          default="flow_to_supervisor"/>
 
-    <sequenceFlow
-            id="flowNo"
-            name="No"
-            sourceRef="fineGateway"
-            targetRef="generateNotice"/>
+        <sequenceFlow id="flow_to_supervisor"
+                      name="fine ≤ supervisorLimit"
+                      sourceRef="gw_fine_check"
+                      targetRef="task_supervisor_approval">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${fine <= supervisorLimit}]]>
+            </conditionExpression>
+        </sequenceFlow>
 
-    <sequenceFlow
-            id="flowAfterManager"
-            sourceRef="managerTask"
-            targetRef="generateNotice"/>
+        <sequenceFlow id="flow_to_manager"
+                      name="fine > supervisorLimit"
+                      sourceRef="gw_fine_check"
+                      targetRef="task_manager_approval">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${fine > supervisorLimit}]]>
+            </conditionExpression>
+        </sequenceFlow>
 
-    <serviceTask
-            id="pushOracle"
-            name="Push Enforcement To Oracle"
-            flowable:class="com.gissoft.inspection_backend.workflow.PushOracleService"/>
+        <!-- ── Step 2a: Supervisor approval ──────────────────────────────────── -->
 
-    <sequenceFlow
-            id="flow4"
-            sourceRef="generateNotice"
-            targetRef="pushOracle"/>
+        <userTask id="task_supervisor_approval"
+                  name="Supervisor Approval"
+                  flowable:candidateGroups="supervisor">
+            <documentation>
+                Supervisor reviews the inspection result and notice.
+                Set process variable approved = true to push Oracle, false to reject back to inspector.
+            </documentation>
+        </userTask>
 
-    <endEvent id="endEvent1" name="End"/>
+        <sequenceFlow id="flow_supv_to_decision"
+                      sourceRef="task_supervisor_approval"
+                      targetRef="gw_supervisor_decision"/>
 
-    <sequenceFlow
-            id="flow5"
-            sourceRef="pushOracle"
-            targetRef="endEvent1"/>
+        <exclusiveGateway id="gw_supervisor_decision"
+                          name="Supervisor Decision"
+                          default="flow_supv_rejected"/>
 
-  </process>
+        <sequenceFlow id="flow_supv_approved"
+                      name="Approved"
+                      sourceRef="gw_supervisor_decision"
+                      targetRef="task_push_oracle">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == true}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flow_supv_rejected"
+                      name="Rejected"
+                      sourceRef="gw_supervisor_decision"
+                      targetRef="task_inspector_rework"/>
+
+        <!-- ── Step 2b: Manager approval (escalated) ─────────────────────────── -->
+
+        <userTask id="task_manager_approval"
+                  name="Manager Approval"
+                  flowable:candidateGroups="manager">
+            <documentation>
+                Manager reviews high-value enforcement actions (fine exceeds supervisor limit).
+                Set approved = true to push Oracle, false to reject back to inspector.
+            </documentation>
+        </userTask>
+
+        <sequenceFlow id="flow_mgr_to_decision"
+                      sourceRef="task_manager_approval"
+                      targetRef="gw_manager_decision"/>
+
+        <exclusiveGateway id="gw_manager_decision"
+                          name="Manager Decision"
+                          default="flow_mgr_rejected"/>
+
+        <sequenceFlow id="flow_mgr_approved"
+                      name="Approved"
+                      sourceRef="gw_manager_decision"
+                      targetRef="task_push_oracle">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${approved == true}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flow_mgr_rejected"
+                      name="Rejected"
+                      sourceRef="gw_manager_decision"
+                      targetRef="task_inspector_rework"/>
+
+        <!-- ── Step 3: Inspector rework (rejection loop) ─────────────────────── -->
+
+        <userTask id="task_inspector_rework"
+                  name="Inspector Rework"
+                  flowable:candidateGroups="inspector">
+            <documentation>
+                Inspector reviews rejection reason and either resubmits or cancels.
+                Set resubmit = true to loop back to notice generation, false to cancel.
+            </documentation>
+        </userTask>
+
+        <sequenceFlow id="flow_rework_to_gateway"
+                      sourceRef="task_inspector_rework"
+                      targetRef="gw_resubmit_check"/>
+
+        <exclusiveGateway id="gw_resubmit_check"
+                          name="Resubmit?"
+                          default="flow_resubmit_no"/>
+
+        <sequenceFlow id="flow_resubmit_yes"
+                      name="Resubmit"
+                      sourceRef="gw_resubmit_check"
+                      targetRef="task_generate_notice">
+            <conditionExpression xsi:type="tFormalExpression">
+                <![CDATA[${resubmit == true}]]>
+            </conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flow_resubmit_no"
+                      name="Cancel"
+                      sourceRef="gw_resubmit_check"
+                      targetRef="end_cancelled"/>
+
+        <!-- ── Step 4: Push to Oracle ─────────────────────────────────────────── -->
+        <!--
+          Reached by two paths:
+            1. PASS direct (no notice, no approval) — eventType = RESULT_UPDATE
+            2. After supervisor/manager approval    — eventType = ENFORCEMENT_UPDATE
+          PushOracleService reads the eventType process variable to determine
+          which Oracle operation to perform.
+        -->
+
+        <serviceTask id="task_push_oracle"
+                     name="Push to Oracle"
+                     flowable:delegateExpression="${pushOracleService}"/>
+
+        <sequenceFlow id="flow_oracle_to_end"
+                      sourceRef="task_push_oracle"
+                      targetRef="end_complete"/>
+
+        <!-- ── End events ─────────────────────────────────────────────────────── -->
+
+        <endEvent id="end_complete" name="Process Complete"/>
+        <endEvent id="end_cancelled" name="Process Cancelled"/>
+
+    </process>
 
 </definitions>

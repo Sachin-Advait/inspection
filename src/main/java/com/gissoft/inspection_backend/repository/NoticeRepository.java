@@ -16,17 +16,19 @@ public interface NoticeRepository extends JpaRepository<Notice, UUID> {
 
     List<Notice> findByEntityIdOrderByCreatedAtDesc(UUID entityId);
 
+    List<Notice> findByInspectionIdOrderByCreatedAtDesc(UUID inspectionId);
+
     @Query("""
-        SELECT n FROM Notice n
-        WHERE (:noticeType    IS NULL OR n.noticeType    = :noticeType)
-          AND (:status        IS NULL OR n.status        = :status)
-          AND (:paymentStatus IS NULL OR n.paymentStatus = :paymentStatus)
-        ORDER BY n.createdAt DESC
-        """)
-    Page<Notice> findByFilters(@Param("noticeType")    String noticeType,
-                                @Param("status")        String status,
-                                @Param("paymentStatus") String paymentStatus,
-                                Pageable pageable);
+            SELECT n FROM Notice n
+            WHERE (:noticeType    IS NULL OR n.noticeType    = :noticeType)
+              AND (:status        IS NULL OR n.status        = :status)
+              AND (:paymentStatus IS NULL OR n.paymentStatus = :paymentStatus)
+            ORDER BY n.createdAt DESC
+            """)
+    Page<Notice> findByFilters(@Param("noticeType") String noticeType,
+                               @Param("status") String status,
+                               @Param("paymentStatus") String paymentStatus,
+                               Pageable pageable);
 
     long countByPaymentStatus(String paymentStatus);
 }

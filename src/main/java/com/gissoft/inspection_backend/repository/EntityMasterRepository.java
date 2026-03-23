@@ -17,22 +17,34 @@ public interface EntityMasterRepository extends JpaRepository<EntityMaster, UUID
 
     Optional<EntityMaster> findByExternalRef(String externalRef);
 
+    /**
+     * Search entities — always excludes COMPLETED.
+     * Only returns ACTIVE and OVERDUE entities.
+     * OVERDUE shown first, then ACTIVE, ordered by nextDueAt.
+     */
     @Query("""
             SELECT e FROM EntityMaster e
-            WHERE (:dg IS NULL OR e.directorate = :dg)
-              AND (:category IS NULL OR e.category = :category)
+            WHERE e.complianceFlag IN ('ACTIVE', 'OVERDUE')
+              AND (:dg       IS NULL OR e.directorate = :dg)
+              AND (:category IS NULL OR e.category    = :category)
               AND (
-                    :query IS NULL OR :query = '' OR
-                    LOWER(e.externalRef) LIKE LOWER(CONCAT('%', :query, '%')) OR
-                    LOWER(e.name) LIKE LOWER(CONCAT('%', :query, '%')) OR
-                    LOWER(e.ownerPhone) LIKE LOWER(CONCAT('%', :query, '%'))
+                    :query IS NULL OR :query = ''
+                    OR LOWER(e.externalRef) LIKE LOWER(CONCAT('%', :query, '%'))
+                    OR LOWER(e.name)        LIKE LOWER(CONCAT('%', :query, '%'))
+                    OR LOWER(e.ownerPhone)  LIKE LOWER(CONCAT('%', :query, '%'))
                   )
+            ORDER BY
+              CASE e.complianceFlag
+                WHEN 'OVERDUE' THEN 1
+                WHEN 'ACTIVE'  THEN 2
+                ELSE 3
+              END,
+              e.nextDueAt ASC NULLS LAST
             """)
-    Page<EntityMaster> search(
-            @Param("dg") String dg,
-            @Param("category") String category,
-            @Param("query") String query,
-            Pageable pageable);
+    Page<EntityMaster> search(@Param("dg") String dg,
+                              @Param("category") String category,
+                              @Param("query") String query,
+                              Pageable pageable);
 
     @Query("""
             SELECT e FROM EntityMaster e
