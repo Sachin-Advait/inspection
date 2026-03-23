@@ -146,16 +146,17 @@ public class InspectionService {
                 task.getPhase(),
                 outcome
         );
-        PhaseConfig nextPhaseConfig = phaseRepo
-                .findByDirectorateAndCategoryAndPhaseType(
-                        entity.getDirectorate(),
-                        entity.getCategory(),
-                        nextPhase
-                ).orElseThrow();
+
 
 
 
         if (nextPhase != null && !nextPhase.isBlank()) {
+            PhaseConfig nextPhaseConfig = phaseRepo
+                    .findByDirectorateAndCategoryAndPhaseType(
+                            entity.getDirectorate(),
+                            entity.getCategory(),
+                            nextPhase
+                    ).orElseThrow();
             // Advance the same task to the next phase
             String previousPhase = task.getPhase();
             task.setPhase(nextPhase);
