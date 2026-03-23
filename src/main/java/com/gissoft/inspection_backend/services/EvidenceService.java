@@ -95,7 +95,7 @@ public class EvidenceService {
     }
 
     public List<EvidenceFile> byInspection(UUID inspectionId) {
-        return evidenceRepo.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
+        return evidenceRepo.findByInspectionId(inspectionId);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
