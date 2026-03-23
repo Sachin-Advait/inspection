@@ -124,6 +124,31 @@ public class MobileController {
     // Checklists
     // =========================================================================
 
+    @DeleteMapping("/checklists/questions/{questionId}")
+    public ResponseEntity<Void> deleteQuestion(
+            @PathVariable UUID questionId,
+            @RequestParam(defaultValue = "admin") String actor) {
+
+        checklistService.deleteQuestion(questionId, actor);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/checklists/sections/{sectionId}")
+    public ResponseEntity<Void> deleteSection(
+            @PathVariable UUID sectionId,
+            @RequestParam(defaultValue = "admin") String actor) {
+
+        checklistService.deleteSection(sectionId, actor);
+        return ResponseEntity.noContent().build();
+    }
+    @DeleteMapping("/checklists/templates/{templateId}")
+    public ResponseEntity<Void> deleteTemplate(
+            @PathVariable UUID templateId,
+            @RequestParam(defaultValue = "admin") String actor) {
+
+        checklistService.deleteTemplate(templateId, actor);
+        return ResponseEntity.noContent().build();
+    }
     /**
      * GET /api/checklists/active?dg=&category=&phaseType=
      */
@@ -169,7 +194,7 @@ public class MobileController {
      * passing the full SubmitRequest). The service needs the full SubmitRequest so it
      * can read outcome, reinspectDate, nextDueDate, and followUpDate.
      *
-     * FIX: req can be null when inspector submits with no body (e.g. simple PASS with
+     * FIX: req can be null when inspector submits with nobody (e.g. simple PASS with
      * no follow-up). Guard with a null-safe empty SubmitRequest.
      */
     @PostMapping("/inspections/{inspectionId}/submit")
