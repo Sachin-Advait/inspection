@@ -134,17 +134,21 @@ public class InspectionService {
         );
 
         // 🔹 4. CREATE NEXT TASK
+        // 🔹 4. CREATE NEXT TASK
         if (nextPhase != null && !nextPhase.isBlank()) {
+
+
 
             Task newTask = Task.builder()
                     .entity(entity)
-                    .taskType("REINSPECTION")
-                    .phase(nextPhase)
-                    .subtype("AUTO")
-                    .assignedTo("") // assign later
-                    .status("PENDING")
-                    .priority("MEDIUM")
-                    .sourceSystem(entity.getSourceSystem())
+                    .taskType(task.getTaskType())         // carry over from current task
+                    .phase(nextPhase)                     // only this changes
+                    .subtype(task.getSubtype())           // carry over
+                    .assignedTo(task.getAssignedTo())     // carry over — same inspector
+                    .status("PENDING")                    // always fresh
+                    .priority(task.getPriority())         // carry over
+                    .sourceSystem(task.getSourceSystem()) // already doing this via entity, but cleaner from task
+                    .dueAt(task.getDueAt())                     // computed from phase config SLA
                     .build();
 
             taskRepo.save(newTask);
