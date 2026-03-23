@@ -86,12 +86,6 @@ public class InspectionService {
     // =========================================================
     // SUBMIT INSPECTION
     // =========================================================
-
-    /**
-     * FIX 1: return type was SubmitRequest (the request DTO) — nonsensical.
-     *         Corrected to InspectionResponse, consistent with start() and
-     *         saveAnswers(), and matches what MobileController expects.
-     */
     public InspectionResponse submit(UUID inspectionId,
                                      SubmitRequest req,
                                      String actor) {
@@ -102,7 +96,7 @@ public class InspectionService {
             throw new IllegalStateException("Already submitted");
         }
 
-        Task task        = run.getTask();
+        Task         task   = run.getTask();
         EntityMaster entity = run.getEntity();
 
         // ── 1. OUTCOME ────────────────────────────────────────────────────────
@@ -138,26 +132,52 @@ public class InspectionService {
             log.info("Next due updated for entity {}: {}", entity.getExternalRef(), req.nextDueDate());
         }
 
-        // ── 3. NEXT PHASE RESOLUTION (informational only) ────────────────────
-        // FIX 2: auto task creation after phase complete is removed.
-        // We resolve the next phase only for logging / mobile display purposes.
-        // The supervisor creates the next phase task manually via Work Plans.
+        // ── 3. PHASE ADVANCEMENT — same task moves to next phase ──────────────
+        // Instead of creating a new task, the existing task's phase field is
+        // updated to the next phase and its status reset to PENDING so it
+        // re-enters the Work Plans queue for re-assignment and scheduling.
+        //
+        // If phaseResolverService returns null (e.g. last phase, or FAIL with
+        // no next phase configured), the task is marked COMPLETED and no
+        // phase advancement happens.
         String nextPhase = phaseResolverService.resolveNextPhase(
                 entity.getDirectorate(),
                 entity.getCategory(),
                 task.getPhase(),
                 outcome
         );
+        PhaseConfig nextPhaseConfig = phaseRepo
+                .findByDirectorateAndCategoryAndPhaseType(
+                        entity.getDirectorate(),
+                        entity.getCategory(),
+                        nextPhase
+                ).orElseThrow();
+
+
 
         if (nextPhase != null && !nextPhase.isBlank()) {
-            log.info("Next phase resolved: {} → {} for entity {} " +
-                            "(task creation suppressed — supervisor assigns via Work Plans)",
-                    task.getPhase(), nextPhase, entity.getExternalRef());
+            // Advance the same task to the next phase
+            String previousPhase = task.getPhase();
+            task.setPhase(nextPhase);
+            task.setStatus("PENDING");           // back to queue — ready for Work Plans
+            task.setAssignedTo(null);            // clear assignee: supervisor re-assigns
+            if (nextPhaseConfig.getDueDays() != null) {
+                task.setDueAt(OffsetDateTime.now().plusDays(nextPhaseConfig.getDueDays()));
+            }
+            taskRepo.save(task);
+            log.info("Task {} advanced: {} → {} for entity {} (status reset to PENDING)",
+                    task.getId(), previousPhase, nextPhase, entity.getExternalRef());
+        } else {
+            // No next phase — this was the final phase or outcome blocks advancement
+            task.setStatus("COMPLETED");
+            taskRepo.save(task);
+            log.info("Task {} completed at final phase {} for entity {}",
+                    task.getId(), task.getPhase(), entity.getExternalRef());
         }
 
         // ── 4. CREATE REINSPECTION TASK (inspector-set date) ─────────────────
         // Explicit inspector action on the Outcome screen (CONDITIONAL / FAIL).
-        // This is NOT automatic phase progression — inspector picks the date.
+        // This is a separate follow-up task — not a phase progression.
         if (req.reinspectDate() != null) {
             Task reinspectTask = Task.builder()
                     .entity(entity)
@@ -176,7 +196,7 @@ public class InspectionService {
 
         // ── 5. CREATE FOLLOW-UP TASK (Health Ops only) ───────────────────────
         // Explicit inspector action on the Outcome screen.
-        // NOT automatic phase progression — inspector picks the date.
+        // A separate follow-up task — not a phase progression.
         if (req.followUpDate() != null) {
             Task followUpTask = Task.builder()
                     .entity(entity)
@@ -193,11 +213,7 @@ public class InspectionService {
                     entity.getExternalRef(), req.followUpDate());
         }
 
-        // ── 6. COMPLETE CURRENT TASK ──────────────────────────────────────────
-        task.setStatus("COMPLETED");
-        taskRepo.save(task);
-
-        // ── 7. WORKFLOW (Flowable — notice generation + Oracle push) ─────────
+        // ── 6. WORKFLOW (Flowable — notice generation + Oracle push) ─────────
         // Real fine amount from the Notice already generated on the Outcome screen.
         // fine = 0 for PASS — the BPMN gateway short-circuits to Oracle.
         long fineAmount = noticeRepo
@@ -226,11 +242,10 @@ public class InspectionService {
                 supervisorLimit
         );
 
-        // ── 8. SAVE + AUDIT ───────────────────────────────────────────────────
+        // ── 7. SAVE + AUDIT ───────────────────────────────────────────────────
         run = inspectionRepo.save(run);
         auditService.log(actor, "SUBMIT_INSPECTION", "InspectionRun", run.getId().toString());
 
-        // FIX 1 (cont.): return toResponse(run) — not the raw InspectionRun entity
         return toResponse(run);
     }
 
