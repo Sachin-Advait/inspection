@@ -10,7 +10,6 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "message_log")
-@EntityListeners(AuditingEntityListener.class)
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class MessageLog {
 
@@ -21,7 +20,6 @@ public class MessageLog {
     @Column(name = "entity_id", nullable = false)
     private UUID entityId;
 
-    /** WHATSAPP | SMS */
     @Column(nullable = false, length = 20)
     private String channel;
 
@@ -34,7 +32,6 @@ public class MessageLog {
     @Column(name = "message_body", length = 2000)
     private String messageBody;
 
-    /** SENT | DELIVERED | READ | FAILED */
     @Column(nullable = false, length = 30)
     private String status;
 
@@ -44,7 +41,6 @@ public class MessageLog {
     @Column(name = "sent_by", length = 80)
     private String sentBy;
 
-    @CreatedDate
     @Column(name = "created_at", updatable = false)
     private OffsetDateTime createdAt;
 }

@@ -14,15 +14,15 @@ import java.util.UUID;
 @Repository
 public interface EvidenceFileRepository extends JpaRepository<EvidenceFile, UUID> {
 
-    List<EvidenceFile> findByInspectionIdOrderByCreatedAtAsc(UUID inspectionId);
+    List<EvidenceFile> findByInspectionId(UUID inspectionId);
 
     @Query("""
-        SELECT e FROM EvidenceFile e
-        WHERE (:entityId IS NULL OR e.entityId = :entityId)
-          AND (:fileType IS NULL OR e.fileType  = :fileType)
-        ORDER BY e.capturedAt DESC
-        """)
+            SELECT e FROM EvidenceFile e
+            WHERE (:entityId IS NULL OR e.entityId = :entityId)
+              AND (:fileType IS NULL OR e.fileType  = :fileType)
+            ORDER BY e.capturedAt DESC
+            """)
     Page<EvidenceFile> findByFilters(@Param("entityId") UUID entityId,
-                                      @Param("fileType")  String fileType,
-                                      Pageable pageable);
+                                     @Param("fileType") String fileType,
+                                     Pageable pageable);
 }

@@ -14,8 +14,9 @@ public class TaskCreationService {
 
     private final EntityMasterRepository entityRepo;
     private final TaskRepository taskRepo;
+    private final AuditService auditService;
 
-    public Task createTaskOnly(CreateTaskOnlyRequest req) {
+    public Task createTaskOnly(CreateTaskOnlyRequest req, String actor) {
 
         // 1. Create Entity
         EntityMaster entity = EntityMaster.builder()
@@ -33,19 +34,27 @@ public class TaskCreationService {
 
         entity = entityRepo.save(entity);
 
+        // ✅ AUDIT (Entity creation)
+        auditService.log(actor, "CREATE", "EntityMaster", entity.getId().toString());
+
         // 2. Create Task (NO ASSIGNEE)
         Task task = Task.builder()
                 .entity(entity)
                 .taskType(req.taskType())
                 .phase(req.phase())
                 .subtype(req.subtype())
-                .assignedTo(null) // ❗ unassigned
+                .assignedTo(null)
                 .status("PENDING")
                 .priority(req.priority() != null ? req.priority() : "MEDIUM")
                 .dueAt(req.dueAt())
                 .sourceSystem("INTERNAL")
                 .build();
 
-        return taskRepo.save(task);
+        task = taskRepo.save(task);
+
+        // ✅ AUDIT (Task creation)
+        auditService.log(actor, "CREATE", "Task", task.getId().toString());
+
+        return task;
     }
 }

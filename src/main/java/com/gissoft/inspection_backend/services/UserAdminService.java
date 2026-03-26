@@ -11,7 +11,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -65,7 +67,10 @@ public class UserAdminService {
                 .build();
 
         user = userRepo.save(user);
+
+        // ✅ AUDIT
         auditService.log(actor, "CREATE_USER", "AppUser", user.getId().toString());
+
         return user;
     }
 
@@ -75,21 +80,64 @@ public class UserAdminService {
     public AppUser update(UUID id, UpdateUserRequest req, String actor) {
         AppUser user = findById(id);
 
-        if (req.role() != null) user.setRole(req.role());
-        if (req.fullName() != null) user.setFullName(req.fullName());
-        if (req.phone() != null) user.setPhone(req.phone());
-        if (req.dgAccess() != null) user.setDgAccess(req.dgAccess());
-        if (req.fineLimit() != null) user.setFineLimit(req.fineLimit());
-        if (req.supervisorFineLimit() != null) user.setSupervisorFineLimit(req.supervisorFineLimit());
-        if (req.managerFineLimit() != null) user.setManagerFineLimit(req.managerFineLimit());
+        Map<String, Object> changes = new HashMap<>();
+
+        if (req.role() != null) {
+            changes.put("role_from", user.getRole());
+            changes.put("role_to", req.role());
+            user.setRole(req.role());
+        }
+
+        if (req.fullName() != null) {
+            changes.put("fullName_from", user.getFullName());
+            changes.put("fullName_to", req.fullName());
+            user.setFullName(req.fullName());
+        }
+
+        if (req.phone() != null) {
+            changes.put("phone_from", user.getPhone());
+            changes.put("phone_to", req.phone());
+            user.setPhone(req.phone());
+        }
+
+        if (req.dgAccess() != null) {
+            changes.put("dgAccess_from", user.getDgAccess());
+            changes.put("dgAccess_to", req.dgAccess());
+            user.setDgAccess(req.dgAccess());
+        }
+
+        if (req.fineLimit() != null) {
+            changes.put("fineLimit_from", user.getFineLimit());
+            changes.put("fineLimit_to", req.fineLimit());
+            user.setFineLimit(req.fineLimit());
+        }
+
+        if (req.supervisorFineLimit() != null) {
+            changes.put("supervisorFineLimit_from", user.getSupervisorFineLimit());
+            changes.put("supervisorFineLimit_to", req.supervisorFineLimit());
+            user.setSupervisorFineLimit(req.supervisorFineLimit());
+        }
+
+        if (req.managerFineLimit() != null) {
+            changes.put("managerFineLimit_from", user.getManagerFineLimit());
+            changes.put("managerFineLimit_to", req.managerFineLimit());
+            user.setManagerFineLimit(req.managerFineLimit());
+        }
+
+        changes.put("canCloseCases_from", user.isCanCloseCases());
+        changes.put("canCloseCases_to", req.canCloseCases());
         user.setCanCloseCases(req.canCloseCases());
 
         if (req.newPassword() != null && !req.newPassword().isBlank()) {
+            changes.put("password", "UPDATED");
             user.setPasswordHash(passwordEncoder.encode(req.newPassword()));
         }
 
         user = userRepo.save(user);
-        auditService.log(actor, "UPDATE_USER", "AppUser", id.toString());
+
+        // ✅ AUDIT with diff
+        auditService.log(actor, "UPDATE_USER", "AppUser", id.toString(), changes);
+
         return user;
     }
 
@@ -98,8 +146,11 @@ public class UserAdminService {
     @Transactional
     public void deactivate(UUID id, String actor) {
         AppUser user = findById(id);
+
         user.setActive(false);
         userRepo.save(user);
+
+        // ✅ AUDIT
         auditService.log(actor, "DEACTIVATE_USER", "AppUser", id.toString());
     }
 }

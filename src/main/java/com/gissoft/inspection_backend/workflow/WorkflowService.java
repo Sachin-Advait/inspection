@@ -36,17 +36,18 @@ public class WorkflowService {
      * eventType        — RESULT_UPDATE (PASS) or ENFORCEMENT_UPDATE (FAIL/CONDITIONAL)
      * PushOracleService reads this to pick the right Oracle operation
      */
-    public String startInspectionProcess(long fine,
-                                         String inspectionId,
-                                         String entityId,
-                                         String outcome,
-                                         String noticeType,
-                                         String generatedBy,
-                                         long supervisorLimit) {
+    public String startInspectionProcess(
+            long fine,
+            String inspectionId,
+            String entityId,
+            String outcome,
+            String noticeType,
+            String generatedBy,
+            long supervisorLimit) {
 
         Map<String, Object> vars = new HashMap<>();
-        vars.put("fine", fine);
-        vars.put("supervisorLimit", supervisorLimit);
+        vars.put("fine", (int) Math.min(fine, Integer.MAX_VALUE));
+        vars.put("supervisorLimit", (int) Math.min(supervisorLimit, Integer.MAX_VALUE));
         vars.put("inspectionId", inspectionId);
         vars.put("entityId", entityId);
         vars.put("outcome", outcome);

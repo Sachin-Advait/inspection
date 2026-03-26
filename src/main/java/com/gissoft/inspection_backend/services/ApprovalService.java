@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,6 +33,7 @@ public class ApprovalService {
 
     @Transactional
     public ApprovalRequest approve(UUID approvalId, DecisionRequest req, String actor) {
+
         ApprovalRequest approval = findAndAssertPending(approvalId);
 
         approval.setStatus("APPROVED");
@@ -42,16 +44,24 @@ public class ApprovalService {
         var run = approval.getInspection();
         var entity = run.getEntity();
 
-        // Push ENFORCEMENT_UPDATE to Oracle for Oracle-sourced entities
-        // Oracle integration removed (demo mode)
         if ("ORACLE".equals(entity.getSourceSystem())) {
             log.info("Oracle push skipped (demo mode) for entity {}", entity.getId());
         }
 
         approvalRepo.save(approval);
-        auditService.log(actor, "APPROVE", "ApprovalRequest", approvalId.toString(),
-                Map.of("note", approval.getDecisionNote() != null
-                        ? approval.getDecisionNote() : ""), null);
+
+        Map<String, Object> diff = new HashMap<>();
+        diff.put("note", approval.getDecisionNote() != null ? approval.getDecisionNote() : "");
+
+        // ✅ CLEAN AUDIT
+        auditService.log(
+                actor,
+                "APPROVE",
+                "ApprovalRequest",
+                approvalId.toString(),
+                diff
+        );
+
         return approval;
     }
 
@@ -59,6 +69,7 @@ public class ApprovalService {
 
     @Transactional
     public ApprovalRequest reject(UUID approvalId, DecisionRequest req, String actor) {
+
         ApprovalRequest approval = findAndAssertPending(approvalId);
 
         approval.setStatus("REJECTED");
@@ -67,21 +78,37 @@ public class ApprovalService {
         approval.setDecidedAt(OffsetDateTime.now());
 
         approvalRepo.save(approval);
-        auditService.log(actor, "REJECT", "ApprovalRequest", approvalId.toString());
+
+        auditService.log(
+                actor,
+                "REJECT",
+                "ApprovalRequest",
+                approvalId.toString(),
+                Map.of("note", approval.getDecisionNote() != null ? approval.getDecisionNote() : "")
+        );
+
         return approval;
     }
 
-    // ── Escalate to Manager ───────────────────────────────────────────────────
+    // ── Escalate ──────────────────────────────────────────────────────────────
 
     @Transactional
     public ApprovalRequest escalate(UUID approvalId, String actor) {
+
         ApprovalRequest approval = findAndAssertPending(approvalId);
 
         approval.setRequiredLevel("MANAGER");
-        approval.setStatus("PENDING");   // reset so manager can see it
+        approval.setStatus("PENDING");
+
         approvalRepo.save(approval);
 
-        auditService.log(actor, "ESCALATE", "ApprovalRequest", approvalId.toString());
+        auditService.log(
+                actor,
+                "ESCALATE",
+                "ApprovalRequest",
+                approvalId.toString()
+        );
+
         return approval;
     }
 
@@ -89,6 +116,7 @@ public class ApprovalService {
 
     @Transactional
     public ApprovalRequest requestReinspection(UUID approvalId, String note, String actor) {
+
         ApprovalRequest approval = findAndAssertPending(approvalId);
 
         approval.setStatus("REINSPECTION_REQUESTED");
@@ -97,7 +125,18 @@ public class ApprovalService {
         approval.setDecidedAt(OffsetDateTime.now());
 
         approvalRepo.save(approval);
-        auditService.log(actor, "REQUEST_REINSPECTION", "ApprovalRequest", approvalId.toString());
+
+        Map<String, Object> diff = new HashMap<>();
+        diff.put("note", note);
+
+        auditService.log(
+                actor,
+                "REQUEST_REINSPECTION",
+                "ApprovalRequest",
+                approvalId.toString(),
+                diff
+        );
+
         return approval;
     }
 

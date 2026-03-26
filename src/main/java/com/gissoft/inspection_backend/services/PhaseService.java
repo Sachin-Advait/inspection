@@ -12,16 +12,27 @@ import java.util.List;
 public class PhaseService {
 
     private final PhaseConfigRepository repo;
+    private final AuditService auditService;
 
     public List<PhaseConfig> getPhases(String dg, String category) {
         return repo.findByDirectorateAndCategoryAndActiveTrueOrderBySortOrderAsc(dg, category);
     }
 
-    public PhaseConfig create(PhaseConfig phase) {
-        return repo.save(phase);
+    public PhaseConfig create(PhaseConfig phase, String actor) {
+        PhaseConfig saved = repo.save(phase);
+
+        // ✅ AUDIT
+        auditService.log(actor, "CREATE", "PhaseConfig", saved.getId().toString());
+
+        return saved;
     }
 
-    public List<PhaseConfig> saveAll(List<PhaseConfig> phases) {
-        return repo.saveAll(phases);
+    public List<PhaseConfig> saveAll(List<PhaseConfig> phases, String actor) {
+        List<PhaseConfig> saved = repo.saveAll(phases);
+
+        // ✅ AUDIT
+        auditService.log(actor, "UPSERT", "PhaseConfig", "BULK");
+
+        return saved;
     }
 }

@@ -13,7 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -28,21 +31,22 @@ public class InspectionService {
     private final PhaseConfigRepository phaseRepo;
     private final WorkflowService workflowService;
     private final AuditService auditService;
-    private final AppUserRepository userRepo;
     private final NoticeRepository noticeRepo;
+    private final AppUserRepository userRepo;
 
-    // =========================================================
-    // START INSPECTION
-    // =========================================================
+    // ── START ────────────────────────────────────────────────────────────────
+
     public InspectionResponse start(UUID taskId, String actor) {
 
         Task task = taskRepo.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found"));
 
-        inspectionRepo.findByTaskIdAndSubmittedAtIsNull(taskId)
-                .ifPresent(i -> {
-                    throw new IllegalStateException("Inspection already in progress");
-                });
+        Optional<InspectionRun> existing =
+                inspectionRepo.findByTaskIdAndSubmittedAtIsNull(taskId);
+
+        if (existing.isPresent()) {
+            return toResponse(existing.get());
+        }
 
         ChecklistTemplate checklist = resolveChecklist(task);
 
@@ -61,34 +65,44 @@ public class InspectionService {
         return toResponse(inspectionRepo.save(run));
     }
 
-    // =========================================================
-    // SAVE ANSWERS
-    // =========================================================
-    public InspectionResponse saveAnswers(UUID inspectionId,
-                                          List<AnswerItem> answers) {
+    public InspectionResponse saveAnswers(UUID inspectionId, List<AnswerItem> answers) {
 
         InspectionRun run = getRun(inspectionId);
 
-        run.getAnswers().clear();
+        Map<UUID, InspectionAnswer> existingAnswers =
+                run.getAnswers().stream()
+                        .collect(Collectors.toMap(
+                                InspectionAnswer::getQuestionId,
+                                a -> a
+                        ));
 
         for (AnswerItem item : answers) {
-            run.getAnswers().add(InspectionAnswer.builder()
-                    .inspection(run)
-                    .questionId(item.questionId())
-                    .answer(item.answer())
-                    .note(item.note())
-                    .build());
+
+            InspectionAnswer existing = existingAnswers.get(item.questionId());
+
+            if (existing != null) {
+                existing.setAnswer(item.answer());
+                existing.setNote(item.note());
+            } else {
+                run.getAnswers().add(
+                        InspectionAnswer.builder()
+                                .inspection(run)
+                                .questionId(item.questionId())
+                                .answer(item.answer())
+                                .note(item.note())
+                                .build()
+                );
+            }
         }
 
         return toResponse(inspectionRepo.save(run));
     }
 
-    // =========================================================
-    // SUBMIT INSPECTION
-    // =========================================================
-    public InspectionRun submit(UUID inspectionId,
-                                SubmitRequest req,
-                                String actor) {
+    // ── SUBMIT ───────────────────────────────────────────────────────────────
+
+    public InspectionResponse submit(UUID inspectionId,
+                                     SubmitRequest req,
+                                     String actor) {
 
         InspectionRun run = getRun(inspectionId);
 
@@ -99,43 +113,21 @@ public class InspectionService {
         Task task = run.getTask();
         EntityMaster entity = run.getEntity();
 
-        // ── 1. OUTCOME ────────────────────────────────────────────────────────
-        // Inspector-confirmed outcome from Flutter takes precedence.
-        // Fall back to computing from fail count only if not provided.
-        String outcome;
-        if (req.outcome() != null && !req.outcome().isBlank()) {
-            outcome = req.outcome().toUpperCase();
-        } else {
-            int failCount = (int) run.getAnswers().stream()
-                    .filter(a -> {
-                        ChecklistQuestion q = checklistService.getQuestion(a.getQuestionId());
-                        return q.getRule() != null && "FAIL".equalsIgnoreCase(a.getAnswer());
-                    })
-                    .count();
-
-            if (failCount == 0) outcome = "PASS";
-            else if (failCount <= 2) outcome = "CONDITIONAL";
-            else outcome = "FAIL";
-        }
+        String outcome = (req.outcome() != null && !req.outcome().isBlank())
+                ? req.outcome().toUpperCase()
+                : computeOutcome(run);
 
         run.setOutcome(outcome);
         run.setSubmittedAt(OffsetDateTime.now());
         run.setSummaryNote(req.summaryNote());
 
-        // ── 2. ENTITY UPDATE ──────────────────────────────────────────────────
         entity.setLastInspectionAt(run.getSubmittedAt());
         entity.setLastInspectionResult(outcome);
 
-        // Health Operational: update next scheduled due date
         if (req.nextDueDate() != null) {
             entity.setNextDueAt(req.nextDueDate());
-            log.info("Next due updated for entity {}: {}", entity.getExternalRef(), req.nextDueDate());
         }
 
-        // ── 3. NEXT PHASE (automatic — phase resolver handles Technical + Licensing) ──
-        // Phase resolver determines the next structured phase (e.g. Foundation → Structural).
-        // This runs for Technical and Health Licensing flows.
-        // For reinspections set by inspector date, we create the task below instead.
         String nextPhase = phaseResolverService.resolveNextPhase(
                 entity.getDirectorate(),
                 entity.getCategory(),
@@ -143,70 +135,52 @@ public class InspectionService {
                 outcome
         );
 
-        // ── 4. CREATE NEXT STRUCTURED PHASE TASK (if resolver found one) ─────
         if (nextPhase != null && !nextPhase.isBlank()) {
-            Task nextTask = Task.builder()
-                    .entity(entity)
-                    .taskType(task.getTaskType())
-                    .subtype(task.getSubtype())
-                    .phase(nextPhase)
-                    .assignedTo(task.getAssignedTo())
-                    .status("PENDING")
-                    .priority(task.getPriority())
-                    .sourceSystem(task.getSourceSystem())
-                    .dueAt(task.getDueAt())   // SLA carried from phase config
-                    .build();
-            taskRepo.save(nextTask);
-            log.info("Next phase task created: {} → {} for entity {}",
-                    task.getPhase(), nextPhase, entity.getExternalRef());
+            PhaseConfig nextPhaseConfig = phaseRepo
+                    .findByDirectorateAndCategoryAndPhaseType(
+                            entity.getDirectorate(),
+                            entity.getCategory(),
+                            nextPhase
+                    ).orElseThrow();
+
+            task.setPhase(nextPhase);
+            task.setStatus("PENDING");
+            task.setAssignedTo(null);
+
+            if (nextPhaseConfig.getDueDays() != null) {
+                task.setDueAt(OffsetDateTime.now().plusDays(nextPhaseConfig.getDueDays()));
+            }
+
+            taskRepo.save(task);
+        } else {
+            task.setStatus("COMPLETED");
+            taskRepo.save(task);
         }
 
-        // ── 5. CREATE REINSPECTION TASK (inspector-set date, CONDITIONAL/FAIL) ──
-        // This is separate from the phase resolver — it's a manual follow-up
-        // date the inspector sets on the Outcome screen.
         if (req.reinspectDate() != null) {
-            Task reinspectTask = Task.builder()
+            taskRepo.save(Task.builder()
                     .entity(entity)
                     .taskType("REINSPECTION")
                     .phase("FollowUp")
-                    .assignedTo(task.getAssignedTo())
                     .status("PENDING")
                     .priority("HIGH")
                     .sourceSystem("INTERNAL")
                     .dueAt(req.reinspectDate())
-                    .build();
-            taskRepo.save(reinspectTask);
-            log.info("Reinspection task created for entity {} due {}",
-                    entity.getExternalRef(), req.reinspectDate());
+                    .build());
         }
 
-        // ── 6. CREATE FOLLOW-UP TASK (Health Ops only) ───────────────────────
         if (req.followUpDate() != null) {
-            Task followUpTask = Task.builder()
+            taskRepo.save(Task.builder()
                     .entity(entity)
                     .taskType("REINSPECTION")
                     .phase("FollowUpHygiene")
-                    .assignedTo(task.getAssignedTo())
                     .status("PENDING")
                     .priority("HIGH")
                     .sourceSystem("INTERNAL")
                     .dueAt(req.followUpDate())
-                    .build();
-            taskRepo.save(followUpTask);
-            log.info("Follow-up hygiene task created for entity {} due {}",
-                    entity.getExternalRef(), req.followUpDate());
+                    .build());
         }
 
-        // ── 7. COMPLETE CURRENT TASK ──────────────────────────────────────────
-        task.setStatus("COMPLETED");
-        taskRepo.save(task);
-
-        // ── 8. WORKFLOW (Flowable — notice generation + Oracle push) ─────────
-
-        // Real fine amount: read from the Notice already generated by the
-        // inspector on the Outcome screen (before Submit).
-        // If no notice was generated yet (PASS or inspector skipped it),
-        // fine = 0 — the BPMN outcome gateway will short-circuit to Oracle.
         long fineAmount = noticeRepo
                 .findByInspectionIdOrderByCreatedAtDesc(run.getId())
                 .stream()
@@ -214,8 +188,6 @@ public class InspectionService {
                 .mapToLong(n -> n.getFineAmount())
                 .sum();
 
-        // Real supervisor limit: from the inspector's AppUser profile.
-        // Admin sets this per user in the portal. Default 200 if not configured.
         long supervisorLimit = userRepo.findByUsername(actor)
                 .map(u -> u.getSupervisorFineLimit() != null
                         ? u.getSupervisorFineLimit()
@@ -234,16 +206,34 @@ public class InspectionService {
                 supervisorLimit
         );
 
-        // ── 9. SAVE + AUDIT ───────────────────────────────────────────────────
         run = inspectionRepo.save(run);
-        auditService.log(actor, "SUBMIT_INSPECTION", "InspectionRun", run.getId().toString());
 
-        return run;
+        // ✅ CLEAN AUDIT
+        auditService.log(
+                actor,
+                "SUBMIT_INSPECTION",
+                "InspectionRun",
+                run.getId().toString()
+        );
+
+        return toResponse(run);
     }
 
-    // =========================================================
-    // CHECKLIST RESOLUTION
-    // =========================================================
+    // ── HELPERS ──────────────────────────────────────────────────────────────
+
+    private String computeOutcome(InspectionRun run) {
+        int failCount = (int) run.getAnswers().stream()
+                .filter(a -> {
+                    ChecklistQuestion q = checklistService.getQuestion(a.getQuestionId());
+                    return q.getRule() != null && "FAIL".equalsIgnoreCase(a.getAnswer());
+                })
+                .count();
+
+        if (failCount == 0) return "PASS";
+        if (failCount <= 2) return "CONDITIONAL";
+        return "FAIL";
+    }
+
     private ChecklistTemplate resolveChecklist(Task task) {
 
         String dg = task.getEntity().getDirectorate();
@@ -252,27 +242,19 @@ public class InspectionService {
 
         PhaseConfig phaseConfig = phaseRepo
                 .findByDirectorateAndCategoryAndPhaseType(dg, category, phase)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Phase config not found: " + dg + "/" + category + "/" + phase));
+                .orElseThrow();
 
         if (phaseConfig.getOverrideChecklistId() != null) {
-            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getOverrideChecklistId());
-            phaseConfig.setOverrideChecklistName(checklist.getName());  // ← sync
-            phaseRepo.save(phaseConfig);
-            return checklist;
+            return checklistService.findById(phaseConfig.getOverrideChecklistId());
         }
+
         if (phaseConfig.getDefaultChecklistId() != null) {
-            ChecklistTemplate checklist = checklistService.findById(phaseConfig.getDefaultChecklistId());
-            phaseConfig.setDefaultChecklistName(checklist.getName());   // ← sync
-            phaseRepo.save(phaseConfig);
-            return checklist;
+            return checklistService.findById(phaseConfig.getDefaultChecklistId());
         }
 
         return checklistService.getActive(dg, category, phase);
     }
-    // =========================================================
-    // HELPERS
-    // =========================================================
+
     private InspectionRun getRun(UUID id) {
         return inspectionRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Inspection not found: " + id));

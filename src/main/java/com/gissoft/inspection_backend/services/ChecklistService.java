@@ -149,7 +149,6 @@ public class ChecklistService {
             throw new IllegalStateException("Only PUBLISHED templates can be activated");
         }
 
-        // Retire existing ACTIVE for same DG/category/phase
         templateRepo.findActive(t.getDg(), t.getCategory(), t.getPhaseType())
                 .ifPresent(existing -> {
                     existing.setStatus("RETIRED");
@@ -177,5 +176,46 @@ public class ChecklistService {
         }
     }
 
+    @Transactional
+    public void deleteQuestion(UUID questionId, String actor) {
+        ChecklistQuestion question = questionRepo.findById(questionId)
+                .orElseThrow(() -> new IllegalArgumentException("Question not found: " + questionId));
 
+        ChecklistTemplate template = question.getSection().getTemplate();
+        assertDraft(template);
+
+        question.getSection().getQuestions().remove(question);
+        questionRepo.flush();
+
+        auditService.log(actor, "DELETE_QUESTION", "ChecklistQuestion", questionId.toString());
+    }
+
+    @Transactional
+    public void deleteSection(UUID sectionId, String actor) {
+        ChecklistSection section = sectionRepo.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Section not found: " + sectionId));
+
+        ChecklistTemplate template = section.getTemplate();
+        assertDraft(template);
+
+        template.getSections().remove(section);
+        sectionRepo.flush();
+
+        auditService.log(actor, "DELETE_SECTION", "ChecklistSection", sectionId.toString());
+    }
+
+    @Transactional
+    public void deleteTemplate(UUID templateId, String actor) {
+        ChecklistTemplate template = findById(templateId);
+
+        if ("ACTIVE".equals(template.getStatus())) {
+            throw new IllegalStateException("Cannot delete ACTIVE template");
+        }
+
+        template.getSections().clear();
+        templateRepo.delete(template);
+        templateRepo.flush();
+
+        auditService.log(actor, "DELETE_TEMPLATE", "ChecklistTemplate", templateId.toString());
+    }
 }

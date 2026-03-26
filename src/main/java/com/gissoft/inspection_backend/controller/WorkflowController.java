@@ -34,7 +34,7 @@ public class WorkflowController {
         String generatedBy = (String) body.getOrDefault("generatedBy", "system");
 
         String processId = workflowService.startInspectionProcess(
-                fine, inspectionId, entityId, outcome, noticeType, generatedBy);
+                fine, inspectionId, entityId, outcome, noticeType, generatedBy,200);
 
         return ResponseEntity.ok(Map.of("processInstanceId", processId));
     }

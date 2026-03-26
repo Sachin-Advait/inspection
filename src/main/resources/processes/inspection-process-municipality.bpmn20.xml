@@ -23,6 +23,9 @@
           PASS with no fine skips notice generation and approval entirely.
           Goes straight to Oracle push (RESULT_UPDATE only, no enforcement).
           CONDITIONAL / FAIL always go through notice + approval.
+
+          FIX: default flow (flow_needs_enforcement) must have NO conditionExpression.
+               Only the non-default path (flow_pass_direct) carries a condition.
         -->
 
         <exclusiveGateway id="gw_outcome_check"
@@ -39,7 +42,7 @@
             </conditionExpression>
         </sequenceFlow>
 
-        <!-- CONDITIONAL / FAIL (or PASS with fine) → full enforcement path -->
+        <!-- CONDITIONAL / FAIL (or PASS with fine) → full enforcement path (DEFAULT — no condition) -->
         <sequenceFlow id="flow_needs_enforcement"
                       name="CONDITIONAL/FAIL"
                       sourceRef="gw_outcome_check"
@@ -57,27 +60,28 @@
 
         <!-- ── Gateway 1: Route by fine amount ───────────────────────────────── -->
         <!--
-          fine        = actual fine from the Notice already generated (set by inspector)
-          supervisorLimit = AppUser.supervisorFineLimit of the submitting inspector's org
-                            (passed as process variable at start from InspectionService)
+          fine             = actual fine from the Notice already generated (set by inspector)
+          supervisorLimit  = AppUser.supervisorFineLimit of the submitting inspector
+                             (passed as process variable at start from InspectionService)
 
-          fine <= supervisorLimit → Supervisor can approve
+          fine <= supervisorLimit → Supervisor can approve  (DEFAULT — no condition)
           fine >  supervisorLimit → Must escalate to Manager
+
+          FIX: default flow (flow_to_supervisor) must have NO conditionExpression.
+               Only the escalation path (flow_to_manager) carries a condition.
         -->
 
         <exclusiveGateway id="gw_fine_check"
                           name="Fine Amount Check"
                           default="flow_to_supervisor"/>
 
+        <!-- Default path: fires when fine > supervisorLimit is FALSE (no condition allowed) -->
         <sequenceFlow id="flow_to_supervisor"
                       name="fine ≤ supervisorLimit"
                       sourceRef="gw_fine_check"
-                      targetRef="task_supervisor_approval">
-            <conditionExpression xsi:type="tFormalExpression">
-                <![CDATA[${fine <= supervisorLimit}]]>
-            </conditionExpression>
-        </sequenceFlow>
+                      targetRef="task_supervisor_approval"/>
 
+        <!-- Escalation path: fires only when fine explicitly exceeds the limit -->
         <sequenceFlow id="flow_to_manager"
                       name="fine > supervisorLimit"
                       sourceRef="gw_fine_check"
@@ -115,6 +119,7 @@
             </conditionExpression>
         </sequenceFlow>
 
+        <!-- Default: rejected (no condition allowed on default flow) -->
         <sequenceFlow id="flow_supv_rejected"
                       name="Rejected"
                       sourceRef="gw_supervisor_decision"
@@ -148,6 +153,7 @@
             </conditionExpression>
         </sequenceFlow>
 
+        <!-- Default: rejected (no condition allowed on default flow) -->
         <sequenceFlow id="flow_mgr_rejected"
                       name="Rejected"
                       sourceRef="gw_manager_decision"
@@ -181,6 +187,7 @@
             </conditionExpression>
         </sequenceFlow>
 
+        <!-- Default: cancel (no condition allowed on default flow) -->
         <sequenceFlow id="flow_resubmit_no"
                       name="Cancel"
                       sourceRef="gw_resubmit_check"

@@ -22,8 +22,6 @@ public class WorkPlanService {
     private final TaskRepository     taskRepo;
     private final AuditService       auditService;
 
-    // ── Create draft plan ─────────────────────────────────────────────────────
-
     @Transactional
     public WorkPlan createPlan(CreatePlanRequest req, String actor) {
         WorkPlan plan = WorkPlan.builder()
@@ -41,15 +39,13 @@ public class WorkPlanService {
 
         if (req.assignments() != null) {
             for (TaskAssignment a : req.assignments()) {
-                applyAssignment(plan.getId(), a);
+                applyAssignment(plan.getId(), a, actor); // ✅ pass actor
             }
         }
 
         auditService.log(actor, "CREATE", "WorkPlan", plan.getId().toString());
         return plan;
     }
-
-    // ── Publish to mobile ─────────────────────────────────────────────────────
 
     @Transactional
     public WorkPlan publish(UUID planId, String actor) {
@@ -68,10 +64,8 @@ public class WorkPlanService {
         return plan;
     }
 
-    // ── Auto-distribute tasks round-robin across inspectors ──────────────────
-
     public Map<String, List<UUID>> autoDistribute(List<UUID> taskIds,
-                                                   List<String> inspectors) {
+                                                  List<String> inspectors) {
         if (inspectors == null || inspectors.isEmpty()) {
             throw new IllegalArgumentException("Inspector list must not be empty");
         }
@@ -88,8 +82,6 @@ public class WorkPlanService {
         return dist;
     }
 
-    // ── Queries ───────────────────────────────────────────────────────────────
-
     public List<WorkPlan> findByStatus(String status) {
         return workPlanRepo.findByStatusOrderByDateFromDesc(status);
     }
@@ -101,12 +93,25 @@ public class WorkPlanService {
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    private void applyAssignment(UUID planId, TaskAssignment a) {
+    private void applyAssignment(UUID planId, TaskAssignment a, String actor) {
         taskRepo.findById(a.taskId()).ifPresentOrElse(task -> {
+
+            String oldAssignee = task.getAssignedTo();
+
             task.setAssignedTo(a.assignedTo());
             if (a.dueAt() != null) task.setDueAt(a.dueAt());
             task.setWorkPlanId(planId);
+
             taskRepo.save(task);
+
+            // ✅ AUDIT (assignment change)
+            Map<String, Object> changes = new HashMap<>();
+            changes.put("from", oldAssignee);
+            changes.put("to", a.assignedTo());
+            changes.put("workPlanId", planId.toString());
+
+            auditService.log(actor, "ASSIGN_TASK", "Task", task.getId().toString(), changes);
+
         }, () -> log.warn("Task not found during assignment: {}", a.taskId()));
     }
 }

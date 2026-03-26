@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -26,4 +27,6 @@ public interface MessageLogRepository extends JpaRepository<MessageLog, UUID> {
                                     @Param("from")    OffsetDateTime from,
                                     @Param("to")      OffsetDateTime to,
                                     Pageable pageable);
+
+    Optional<MessageLog> findByProviderMsgId(String providerMsgId);
 }

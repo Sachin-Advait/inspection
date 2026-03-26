@@ -25,8 +25,9 @@ public class OperationalTypeController {
 
     @PostMapping("/bulk")
     public List<OperationalTypeConfig> save(
-            @RequestBody List<OperationalTypeConfig> list
+            @RequestBody List<OperationalTypeConfig> list,
+            java.security.Principal principal
     ) {
-        return service.saveAll(list);
+        return service.saveAll(list, principal.getName());
     }
 }
