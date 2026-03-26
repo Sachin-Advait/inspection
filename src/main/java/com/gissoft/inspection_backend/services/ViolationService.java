@@ -8,7 +8,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -32,7 +34,10 @@ public class ViolationService {
         }
         req.setActive(true);
         ViolationCode vc = violationCodeRepo.save(req);
+
+        // ✅ AUDIT
         auditService.log(actor, "CREATE", "ViolationCode", vc.getId().toString());
+
         return vc;
     }
 
@@ -40,13 +45,35 @@ public class ViolationService {
     public ViolationCode updateCode(UUID id, ViolationCode req, String actor) {
         ViolationCode vc = violationCodeRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Code not found: " + id));
+
+        Map<String, Object> changes = new HashMap<>();
+
+        changes.put("description_from", vc.getDescription());
+        changes.put("description_to", req.getDescription());
+
+        changes.put("severity_from", vc.getSeverity());
+        changes.put("severity_to", req.getSeverity());
+
+        changes.put("defaultAction_from", vc.getDefaultAction());
+        changes.put("defaultAction_to", req.getDefaultAction());
+
+        changes.put("legalRef_from", vc.getLegalRef());
+        changes.put("legalRef_to", req.getLegalRef());
+
+        changes.put("active_from", vc.isActive());
+        changes.put("active_to", req.isActive());
+
         vc.setDescription(req.getDescription());
         vc.setSeverity(req.getSeverity());
         vc.setDefaultAction(req.getDefaultAction());
         vc.setLegalRef(req.getLegalRef());
         vc.setActive(req.isActive());
+
         vc = violationCodeRepo.save(vc);
-        auditService.log(actor, "UPDATE", "ViolationCode", id.toString());
+
+        // ✅ AUDIT with diff
+        auditService.log(actor, "UPDATE", "ViolationCode", id.toString(), changes);
+
         return vc;
     }
 
@@ -58,13 +85,35 @@ public class ViolationService {
 
     @Transactional
     public FineRule upsertFineRule(FineRule req, String actor) {
-        FineRule rule = fineRuleRepo.findByViolationCode(req.getViolationCode())
-                .orElse(FineRule.builder().violationCode(req.getViolationCode()).build());
+        FineRule existing = fineRuleRepo.findByViolationCode(req.getViolationCode())
+                .orElse(null);
+
+        Map<String, Object> changes = new HashMap<>();
+
+        if (existing != null) {
+            changes.put("baseFine_from", existing.getBaseFine());
+            changes.put("baseFine_to", req.getBaseFine());
+
+            changes.put("maxFine_from", existing.getMaxFine());
+            changes.put("maxFine_to", req.getMaxFine());
+
+            changes.put("approvalRequired_from", existing.getApprovalRequired());
+            changes.put("approvalRequired_to", req.getApprovalRequired());
+        }
+
+        FineRule rule = existing != null
+                ? existing
+                : FineRule.builder().violationCode(req.getViolationCode()).build();
+
         rule.setBaseFine(req.getBaseFine());
         rule.setMaxFine(req.getMaxFine());
         rule.setApprovalRequired(req.getApprovalRequired());
+
         rule = fineRuleRepo.save(rule);
-        auditService.log(actor, "UPSERT", "FineRule", rule.getId().toString());
+
+        // ✅ AUDIT (with diff if update)
+        auditService.log(actor, "UPSERT", "FineRule", rule.getId().toString(), changes);
+
         return rule;
     }
 }

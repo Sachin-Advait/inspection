@@ -12,6 +12,7 @@ import java.util.List;
 public class OperationalTypeService {
 
     private final OperationalTypeRepository repo;
+    private final AuditService auditService;
 
     public List<OperationalTypeConfig> get(String dg, String category, String phase) {
         return repo.findByDirectorateAndCategoryAndPhaseTypeAndActiveTrue(
@@ -19,7 +20,12 @@ public class OperationalTypeService {
         );
     }
 
-    public List<OperationalTypeConfig> saveAll(List<OperationalTypeConfig> list) {
-        return repo.saveAll(list);
+    public List<OperationalTypeConfig> saveAll(List<OperationalTypeConfig> list, String actor) {
+        List<OperationalTypeConfig> saved = repo.saveAll(list);
+
+        // ✅ AUDIT
+        auditService.log(actor, "UPSERT", "OperationalTypeConfig", "BULK");
+
+        return saved;
     }
 }

@@ -29,15 +29,15 @@ public class EvidenceService {
 
     // ── Upload ────────────────────────────────────────────────────────────────
 
-    public EvidenceFile upload(UUID inspectionId, UUID entityId,
-                               UUID questionId, MultipartFile file,
+    public EvidenceFile upload(UUID inspectionId,
+                               UUID entityId,
+                               UUID questionId,
+                               MultipartFile file,
                                String capturedBy) throws Exception {
 
         byte[] bytes = file.getBytes();
         byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
         String sha256 = HexFormat.of().formatHex(digest);
-
-        String ext = getExt(file.getOriginalFilename());
 
         String publicId = "evidence/" + entityId + "/" + inspectionId + "/" + UUID.randomUUID();
 
@@ -56,7 +56,7 @@ public class EvidenceService {
                 .entityId(entityId)
                 .questionId(questionId)
                 .fileType(detectType(file.getContentType()))
-                .storageKey(fileUrl) // now storing Cloudinary URL
+                .storageKey(fileUrl)
                 .originalFilename(file.getOriginalFilename())
                 .mimeType(file.getContentType())
                 .fileSizeBytes(file.getSize())
@@ -67,22 +67,28 @@ public class EvidenceService {
 
         ev = evidenceRepo.save(ev);
 
-        auditService.log(capturedBy, "UPLOAD_EVIDENCE", "EvidenceFile", ev.getId().toString());
+        // ✅ CLEAN AUDIT
+        auditService.log(
+                capturedBy,
+                "UPLOAD_EVIDENCE",
+                "EvidenceFile",
+                ev.getId().toString()
+        );
 
         return ev;
     }
 
-    // ── File URL ──────────────────────────────────────────────────────────────
+    // ── File URL ─────────────────────────────────────────────────────────────
 
     public String getFileUrl(UUID evidenceId) {
 
         EvidenceFile ev = evidenceRepo.findById(evidenceId)
                 .orElseThrow(() -> new IllegalArgumentException("Evidence not found: " + evidenceId));
 
-        return ev.getStorageKey(); // already a Cloudinary URL
+        return ev.getStorageKey();
     }
 
-    // ── Browse ────────────────────────────────────────────────────────────────
+    // ── Browse ───────────────────────────────────────────────────────────────
 
     public Page<EvidenceFile> browse(UUID entityId, String fileType, Pageable pageable) {
         return evidenceRepo.findByFilters(entityId, fileType, pageable);
@@ -92,29 +98,16 @@ public class EvidenceService {
         return evidenceRepo.findByInspectionIdOrderByCreatedAtAsc(inspectionId);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private String detectType(String mime) {
 
         if (mime == null) return "PHOTO";
 
-        if (mime.startsWith("image/"))
-            return "PHOTO";
-
-        if (mime.startsWith("video/"))
-            return "VIDEO";
-
-        if ("application/pdf".equals(mime))
-            return "PDF";
+        if (mime.startsWith("image/")) return "PHOTO";
+        if (mime.startsWith("video/")) return "VIDEO";
+        if ("application/pdf".equals(mime)) return "PDF";
 
         return "PHOTO";
-    }
-
-    private String getExt(String filename) {
-
-        if (filename == null || !filename.contains("."))
-            return "";
-
-        return "." + filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
     }
 }

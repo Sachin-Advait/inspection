@@ -22,9 +22,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * REST-facing notice service used by OpsController.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -36,8 +33,6 @@ public class NoticeService {
     private final Cloudinary cloudinary;
     private final WhatsAppService whatsAppService;
     private final AuditService auditService;
-
-    // ── Generate notice PDF and persist ──────────────────────────────────────
 
     @Transactional
     public Notice generate(GenerateRequest req, String actor) throws Exception {
@@ -79,11 +74,12 @@ public class NoticeService {
                 .build();
 
         notice = noticeRepo.save(notice);
+
+        // ✅ AUDIT
         auditService.log(actor, "GENERATE_NOTICE", "Notice", notice.getId().toString());
+
         return notice;
     }
-
-    // ── Send via messaging channel + WhatsApp ────────────────────────────────
 
     @Transactional
     public Notice send(UUID noticeId, SendRequest req, String actor) {
@@ -98,11 +94,7 @@ public class NoticeService {
         String channel = (req != null && req.channel() != null)
                 ? req.channel().toUpperCase() : "WHATSAPP";
 
-        // ── Build message text ────────────────────────────────────────────────
-
         String messageText = buildWhatsAppMessage(notice, entity);
-
-        // ── Send via WhatsApp (Twilio) ────────────────────────────────────────
 
         String providerMsgId = null;
         String deliveryStatus = "FAILED";
@@ -110,15 +102,13 @@ public class NoticeService {
         if ("WHATSAPP".equals(channel)) {
             if (entity.getOwnerPhone() != null && !entity.getOwnerPhone().isBlank()) {
                 providerMsgId = whatsAppService.sendMessage(
-                        entity.getOwnerPhone(), messageText);
+                        entity.getOwnerPhone(), messageText,actor);
                 deliveryStatus = providerMsgId != null ? "SENT" : "FAILED";
             } else {
                 log.warn("Cannot send WhatsApp — no phone number for entity: {}",
                         entity.getId());
             }
         }
-
-        // ── Persist message log ───────────────────────────────────────────────
 
         MessageLog msgLog = MessageLog.builder()
                 .entityId(entity.getId())
@@ -135,11 +125,12 @@ public class NoticeService {
 
         notice.setStatus("SENT");
         notice = noticeRepo.save(notice);
+
+        // ✅ AUDIT
         auditService.log(actor, "SEND_NOTICE", "Notice", noticeId.toString());
+
         return notice;
     }
-
-    // ── Mark served ───────────────────────────────────────────────────────────
 
     @Transactional
     public Notice markServed(UUID noticeId, String actor) {
@@ -148,11 +139,12 @@ public class NoticeService {
         notice.setServedAt(OffsetDateTime.now());
         notice.setStatus("SERVED");
         notice = noticeRepo.save(notice);
+
+        // ✅ AUDIT
         auditService.log(actor, "MARK_SERVED", "Notice", noticeId.toString());
+
         return notice;
     }
-
-    // ── Update payment status ─────────────────────────────────────────────────
 
     @Transactional
     public Notice updatePayment(UUID noticeId, String paymentStatus, String actor) {
@@ -160,11 +152,12 @@ public class NoticeService {
         Notice notice = findById(noticeId);
         notice.setPaymentStatus(paymentStatus);
         notice = noticeRepo.save(notice);
+
+        // ✅ AUDIT
         auditService.log(actor, "UPDATE_PAYMENT", "Notice", noticeId.toString());
+
         return notice;
     }
-
-    // ── List / search ─────────────────────────────────────────────────────────
 
     public Page<Notice> list(String noticeType, String status,
                              String paymentStatus, Pageable pageable) {
@@ -175,8 +168,6 @@ public class NoticeService {
         return noticeRepo.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Notice not found: " + id));
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String buildWhatsAppMessage(Notice notice, EntityMaster entity) {
 

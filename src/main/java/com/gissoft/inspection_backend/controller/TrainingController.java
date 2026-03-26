@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -25,9 +26,11 @@ public class TrainingController {
     // ================= ADMIN =================
     @PostMapping
     public ResponseEntity<TrainingMaterial> uploadTraining(
-            @RequestBody TrainingUploadAssignDTO request) {
+            @RequestBody TrainingUploadAssignDTO request,
+            Principal principal) {
 
-        TrainingMaterial savedMaterial = trainingService.uploadAndAssign(request);
+        TrainingMaterial savedMaterial =
+                trainingService.uploadAndAssign(request, principal.getName());
 
         return ResponseEntity.status(HttpStatus.CREATED).body(savedMaterial);
     }
@@ -39,13 +42,14 @@ public class TrainingController {
 
     @PostMapping("/assign")
     public ResponseEntity<Void> assignTraining(
-            @RequestBody Map<String, Object> payload) {
+            @RequestBody Map<String, Object> payload,
+            Principal principal) {
 
         Long trainingId = Long.valueOf(payload.get("trainingId").toString());
         List<String> userIds = (List<String>) payload.get("usernames");
         Instant dueDate = Instant.parse(payload.get("dueDate").toString());
 
-        trainingService.assignTraining(trainingId, userIds, dueDate);
+        trainingService.assignTraining(trainingId, userIds, dueDate, principal.getName());
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
@@ -84,20 +88,39 @@ public class TrainingController {
     @PutMapping("/{trainingId}")
     public ResponseEntity<TrainingMaterial> updateTraining(
             @PathVariable Long trainingId,
-            @RequestBody TrainingUploadAssignDTO request) {
+            @RequestBody TrainingUploadAssignDTO request,
+            Principal principal) {
 
         TrainingMaterial updated =
-                trainingService.updateTraining(trainingId, request);
+                trainingService.updateTraining(trainingId, request, principal.getName());
 
         return ResponseEntity.ok(updated);
     }
 
     @DeleteMapping("/{trainingId}")
     public ResponseEntity<Void> deleteTraining(
-            @PathVariable Long trainingId) {
+            @PathVariable Long trainingId,
+            Principal principal) {
 
-        trainingService.deleteTraining(trainingId);
+        trainingService.deleteTraining(trainingId, principal.getName());
 
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{trainingId}")
+    public ResponseEntity<TrainingMaterial> getTrainingById(
+            @PathVariable Long trainingId) {
+
+        TrainingMaterial material = trainingService.getTrainingById(trainingId);
+        return ResponseEntity.ok(material);
+    }
+
+    @GetMapping("/{trainingId}/assignments")
+    public ResponseEntity<List<TrainingAssignment>> getAssignmentsByTraining(
+            @PathVariable Long trainingId) {
+
+        return ResponseEntity.ok(
+                trainingService.getAssignmentsByTraining(trainingId)
+        );
     }
 }

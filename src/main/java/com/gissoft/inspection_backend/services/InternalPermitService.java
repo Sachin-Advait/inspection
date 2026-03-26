@@ -17,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -28,7 +27,7 @@ public class InternalPermitService {
     private final EntityMasterRepository   entityRepo;
     private final TaskRepository           taskRepo;
     private final AuditService             auditService;
-    private final PhaseConfigRepository phaseRepo;
+    private final PhaseConfigRepository    phaseRepo;
 
     // ── Create permit (DRAFT) ─────────────────────────────────────────────────
 
@@ -49,7 +48,10 @@ public class InternalPermitService {
                 .build();
 
         permit = permitRepo.save(permit);
+
+        // ✅ AUDIT
         auditService.log(actor, "CREATE", "InternalPermit", permit.getId().toString());
+
         return permit;
     }
 
@@ -63,7 +65,6 @@ public class InternalPermitService {
             throw new IllegalStateException("Only DRAFT permits can be activated");
         }
 
-        // Create entity_master for this permit
         EntityMaster entity = EntityMaster.builder()
                 .externalRef(permit.getPermitNo())
                 .directorate("TECHNICAL")
@@ -79,18 +80,20 @@ public class InternalPermitService {
 
         entity = entityRepo.save(entity);
 
-        // Link permit to entity
         permit.setEntityId(entity.getId());
         permit.setStatus("ACTIVE");
         permit.setActivatedAt(OffsetDateTime.now());
-        String firstPhase = firstPhase("TECHNICAL", permit.getCategory());
 
+        String firstPhase = firstPhase("TECHNICAL", permit.getCategory());
         permit.setCurrentPhase(firstPhase);
 
         createFirstTask(entity, "TECHNICAL", permit.getCategory());
 
         permit = permitRepo.save(permit);
+
+        // ✅ AUDIT
         auditService.log(actor, "ACTIVATE", "InternalPermit", permitId.toString());
+
         return permit;
     }
 
@@ -101,14 +104,17 @@ public class InternalPermitService {
         InternalPermit permit = findById(permitId);
         permit.setStatus("CLOSED");
         permit = permitRepo.save(permit);
+
+        // ✅ AUDIT
         auditService.log(actor, "CLOSE", "InternalPermit", permitId.toString());
+
         return permit;
     }
 
     // ── List / search ─────────────────────────────────────────────────────────
 
     public Page<InternalPermit> list(String category, String status,
-                                      String area, Pageable pageable) {
+                                     String area, Pageable pageable) {
         return permitRepo.findByFilters(category, status, area, pageable);
     }
 
@@ -130,7 +136,6 @@ public class InternalPermitService {
         String seq  = String.format("%06d", System.currentTimeMillis() % 1_000_000);
         return prefix + "-" + year + "-" + seq;
     }
-
 
     private String firstPhase(String dg, String category) {
         return phaseRepo

@@ -63,7 +63,10 @@ public class TaskService {
                 .build();
 
         task = taskRepo.save(task);
+
+        // ✅ AUDIT
         auditService.log(actor, "CREATE", "Task", task.getId().toString());
+
         return task;
     }
 
@@ -73,15 +76,16 @@ public class TaskService {
     public Task reassign(UUID taskId, String newAssignee, String actor) {
         Task task = findById(taskId);
         String old = task.getAssignedTo();
+
         task.setAssignedTo(newAssignee);
         task = taskRepo.save(task);
 
-        // 🔥 FIX HERE
         Map<String, Object> changes = new HashMap<>();
         changes.put("from", old);
         changes.put("to", newAssignee);
 
-        auditService.log(actor, "REASSIGN", "Task", taskId.toString(), changes, null);
+        // ✅ AUDIT (with diff)
+        auditService.log(actor, "REASSIGN", "Task", taskId.toString(), changes);
 
         return task;
     }
@@ -91,9 +95,13 @@ public class TaskService {
     @Transactional
     public Task reschedule(UUID taskId, OffsetDateTime newDue, String actor) {
         Task task = findById(taskId);
+
         task.setDueAt(newDue);
         task = taskRepo.save(task);
+
+        // ✅ AUDIT
         auditService.log(actor, "RESCHEDULE", "Task", taskId.toString());
+
         return task;
     }
 
@@ -102,9 +110,13 @@ public class TaskService {
     @Transactional
     public Task cancel(UUID taskId, String actor) {
         Task task = findById(taskId);
+
         task.setStatus("CANCELLED");
         task = taskRepo.save(task);
+
+        // ✅ AUDIT
         auditService.log(actor, "CANCEL", "Task", taskId.toString());
+
         return task;
     }
 
@@ -119,6 +131,7 @@ public class TaskService {
         return taskRepo.findAll();
     }
 
+    // ── Demo Task ─────────────────────────────────────────────────────────────
 
     @Transactional
     public Task createDemoTask(CreateDemoTaskRequest req, String actor) {
@@ -134,7 +147,6 @@ public class TaskService {
                 .lat(req.lat())
                 .lon(req.lon())
                 .complianceFlag("ACTIVE")
-                // these start null — updated after first inspection is submitted
                 .lastInspectionAt(null)
                 .lastInspectionResult(null)
                 .nextDueAt(req.nextDueAt())
@@ -155,9 +167,13 @@ public class TaskService {
                 .build();
 
         task = taskRepo.save(task);
+
+        // ✅ AUDIT
         auditService.log(actor, "CREATE_DEMO_TASK", "Task", task.getId().toString());
+
         return task;
     }
+
     public List<Task> findByEntity(UUID entityId) {
         return taskRepo.findByEntityIdOrderByDueAtAsc(entityId);
     }

@@ -16,28 +16,41 @@ import java.util.Map;
 public class AuthService {
 
     private final AuthenticationManager authenticationManager;
+    private final AuditService auditService;
     private final UserDetailsService userDetailsService;
     private final JwtService jwtService;
 
-
     public LoginResponse login(LoginRequest request) {
 
-        // Throws BadCredentialsException if wrong — propagates to 401
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         request.getUsername(), request.getPassword())
         );
 
-        UserDetails userDetails = userDetailsService.loadUserByUsername(request.getUsername());
+        UserDetails userDetails =
+                userDetailsService.loadUserByUsername(request.getUsername());
 
-        // Embed role as an extra claim so the frontend can read it without decoding authorities
         String role = userDetails.getAuthorities().stream()
                 .findFirst()
                 .map(a -> a.getAuthority().replace("ROLE_", ""))
                 .orElse("INSPECTOR");
 
-        String token = jwtService.generateToken(Map.of("role", role), userDetails);
+        String token =
+                jwtService.generateToken(Map.of("role", role), userDetails);
 
-        return new LoginResponse(token, userDetails.getUsername(), role);
+        // ✅ CLEAN AUDIT (no role/IP here)
+        auditService.log(
+                userDetails.getUsername(),
+                "LOGIN",
+                "AUTH",
+                null,
+                Map.of("login", "success")
+        );
+
+        return new LoginResponse(
+                token,
+                userDetails.getUsername(),
+                role
+        );
     }
 }

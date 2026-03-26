@@ -23,14 +23,13 @@ public class TrainingService {
     private final TrainingMaterialRepository materialRepo;
     private final TrainingAssignmentRepository assignmentRepo;
     private final AppUserRepository userRepo;
+    private final AuditService auditService;
 
     /* ======================================================
        ADMIN
        ====================================================== */
-    public TrainingMaterial uploadAndAssign(TrainingUploadAssignDTO request) {
+    public TrainingMaterial uploadAndAssign(TrainingUploadAssignDTO request, String actor) {
 
-        // ✅ BUILD material from FLAT DTO
-        System.out.println("MATERIAL->>>>>>>>>>>>>>>>" + request);
         TrainingMaterial material = TrainingMaterial.builder()
                 .title(request.getTitle())
                 .type(request.getType())
@@ -52,7 +51,8 @@ public class TrainingService {
 
             for (String username : request.getUsernames()) {
 
-                boolean alreadyAssigned = assignmentRepo.findByUsernameAndTrainingId(username, savedMaterial.getId())
+                boolean alreadyAssigned = assignmentRepo
+                        .findByUsernameAndTrainingId(username, savedMaterial.getId())
                         .isPresent();
 
                 if (alreadyAssigned) continue;
@@ -74,6 +74,9 @@ public class TrainingService {
             materialRepo.save(savedMaterial);
         }
 
+        // ✅ AUDIT
+        auditService.log(actor, "UPLOAD_TRAINING", "TrainingMaterial", savedMaterial.getId().toString());
+
         return savedMaterial;
     }
 
@@ -81,8 +84,7 @@ public class TrainingService {
         return materialRepo.findAllByActiveTrue();
     }
 
-
-    public void assignTraining(Long trainingId, List<String> userIds, Instant dueDate) {
+    public void assignTraining(Long trainingId, List<String> userIds, Instant dueDate, String actor) {
 
         TrainingMaterial material = materialRepo.findByIdAndActiveTrue(trainingId)
                 .orElseThrow(() -> new RuntimeException("Training not found"));
@@ -108,6 +110,9 @@ public class TrainingService {
 
         material.setAssignedTo((int) assignmentRepo.countByTrainingId(trainingId));
         materialRepo.save(material);
+
+        // ✅ AUDIT
+        auditService.log(actor, "ASSIGN_TRAINING", "TrainingMaterial", trainingId.toString());
     }
 
     /* ======================================================
@@ -211,7 +216,9 @@ public class TrainingService {
        UPDATE / DELETE
        ====================================================== */
 
-    public TrainingMaterial updateTraining(Long trainingId, TrainingUploadAssignDTO request) {
+    public TrainingMaterial updateTraining(Long trainingId,
+                                           TrainingUploadAssignDTO request,
+                                           String actor) {
 
         TrainingMaterial material =
                 materialRepo.findByIdAndActiveTrue(trainingId)
@@ -229,8 +236,6 @@ public class TrainingService {
         }
 
         materialRepo.save(material);
-
-        /* ===== Assignment sync ===== */
 
         List<String> newUsernames = request.getUsernames() != null ? request.getUsernames() : List.of();
         List<TrainingAssignment> existing = assignmentRepo.findByTrainingId(trainingId);
@@ -264,10 +269,14 @@ public class TrainingService {
 
         material.setAssignedTo((int) assignmentRepo.countByTrainingId(trainingId));
         materialRepo.save(material);
+
+        // ✅ AUDIT
+        auditService.log(actor, "UPDATE_TRAINING", "TrainingMaterial", trainingId.toString());
+
         return material;
     }
 
-    public void deleteTraining(Long trainingId) {
+    public void deleteTraining(Long trainingId, String actor) {
 
         TrainingMaterial material =
                 materialRepo.findByIdAndActiveTrue(trainingId)
@@ -277,5 +286,21 @@ public class TrainingService {
         material.setDeletedAt(Instant.now());
 
         materialRepo.save(material);
+
+        // ✅ AUDIT
+        auditService.log(actor, "DELETE_TRAINING", "TrainingMaterial", trainingId.toString());
+    }
+
+    public TrainingMaterial getTrainingById(Long trainingId) {
+        return materialRepo.findByIdAndActiveTrue(trainingId)
+                .orElseThrow(() -> new RuntimeException("Training not found"));
+    }
+
+    public List<TrainingAssignment> getAssignmentsByTraining(Long trainingId) {
+
+        materialRepo.findByIdAndActiveTrue(trainingId)
+                .orElseThrow(() -> new RuntimeException("Training not found"));
+
+        return assignmentRepo.findByTrainingId(trainingId);
     }
 }
