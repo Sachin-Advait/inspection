@@ -1,5 +1,7 @@
 package com.gissoft.inspection_backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -38,11 +40,18 @@ public class InspectionDto {
     // nextDueDate   — Health Operational: next scheduled inspection
     // followUpDate  — Health Operational CONDITIONAL/FAIL follow-up
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record SubmitRequest(
             String outcome,
             String summaryNote,
+
+            @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSX")
             OffsetDateTime reinspectDate,
+
+            @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSX")
             OffsetDateTime nextDueDate,
+
+            @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSX")
             OffsetDateTime followUpDate
     ) {
     }

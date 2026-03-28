@@ -11,10 +11,8 @@ import org.flowable.engine.delegate.DelegateExecution;
 import org.flowable.engine.delegate.JavaDelegate;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -50,11 +48,12 @@ public class GenerateNoticeService implements JavaDelegate {
 
         try {
 
-            Map uploadResult = cloudinary.uploader().upload(
-                    new ByteArrayInputStream(pdfBytes),
+            var uploadResult = cloudinary.uploader().upload(
+                    pdfBytes,
                     ObjectUtils.asMap(
-                            "resource_type", "raw",
-                            "public_id", "notices/" + entityId + "/" + noticeNo
+                            "resource_type", "auto",
+                            "public_id", "notices/" + entityId + "/" + noticeNo,
+                            "format", "pdf"
                     )
             );
 

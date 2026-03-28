@@ -100,9 +100,7 @@ public class InspectionService {
 
     // ── SUBMIT ───────────────────────────────────────────────────────────────
 
-    public InspectionResponse submit(UUID inspectionId,
-                                     SubmitRequest req,
-                                     String actor) {
+    public InspectionResponse submit(UUID inspectionId, SubmitRequest req, String actor) {
 
         InspectionRun run = getRun(inspectionId);
 
@@ -161,6 +159,7 @@ public class InspectionService {
             taskRepo.save(Task.builder()
                     .entity(entity)
                     .taskType("REINSPECTION")
+                    .subtype("REINSPECTION")
                     .phase("FollowUp")
                     .status("PENDING")
                     .priority("HIGH")
@@ -173,6 +172,7 @@ public class InspectionService {
             taskRepo.save(Task.builder()
                     .entity(entity)
                     .taskType("REINSPECTION")
+                    .subtype("REINSPECTION")
                     .phase("FollowUpHygiene")
                     .status("PENDING")
                     .priority("HIGH")
@@ -185,14 +185,11 @@ public class InspectionService {
                 .findByInspectionIdOrderByCreatedAtDesc(run.getId())
                 .stream()
                 .filter(n -> n.getFineAmount() != null)
-                .mapToLong(n -> n.getFineAmount())
+                .mapToLong(Notice::getFineAmount)
                 .sum();
 
-        long supervisorLimit = userRepo.findByUsername(actor)
-                .map(u -> u.getSupervisorFineLimit() != null
-                        ? u.getSupervisorFineLimit()
-                        : 200L)
-                .orElse(200L);
+        long supervisorLimit = userRepo.findByUsername(actor).filter(u -> u.getSupervisorFineLimit() != null)
+                .map(AppUser::getSupervisorFineLimit).orElse(200L);
 
         String noticeType = "FAIL".equals(outcome) ? "FINE" : "WARNING";
 
@@ -210,6 +207,7 @@ public class InspectionService {
 
         // ✅ CLEAN AUDIT
         auditService.log(
+                
                 actor,
                 "SUBMIT_INSPECTION",
                 "InspectionRun",
