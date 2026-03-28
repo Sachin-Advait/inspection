@@ -192,12 +192,20 @@ public class InspectionService {
                 .map(AppUser::getSupervisorFineLimit)
                 .orElse(200L);
 
+        String noticeType = null;
+
+        if ("FAIL".equalsIgnoreCase(outcome)) {
+            noticeType = "FINE";
+        } else if ("CONDITIONAL".equalsIgnoreCase(outcome)) {
+            noticeType = "WARNING";
+        }
+
         workflowService.startInspectionProcess(
-                0L,
+                10L,
                 run.getId().toString(),
                 entity.getId().toString(),
                 outcome,
-                null,
+                noticeType,   // ✅ FIXED
                 actor,
                 supervisorLimit
         );
