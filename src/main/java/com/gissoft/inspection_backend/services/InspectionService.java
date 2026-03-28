@@ -134,7 +134,6 @@ public class InspectionService {
 
         // 🔥 COMPLETE TASK (inspection ends here)
         task.setStatus("COMPLETED");
-        task.setAssignedTo(null);
         taskRepo.save(task);
 
         // 🔥 Create approval request if needed
@@ -147,6 +146,43 @@ public class InspectionService {
                             .createdAt(OffsetDateTime.now())
                             .build()
             );
+        }
+        // ✅ HANDLE PASS → MOVE TO NEXT PHASE
+        if ("PASS".equalsIgnoreCase(outcome)) {
+
+            String nextPhase = phaseResolverService.resolveNextPhase(
+                    entity.getDirectorate(),
+                    entity.getCategory(),
+                    task.getPhase(),
+                    outcome
+            );
+
+            if (nextPhase != null && !nextPhase.isBlank()) {
+
+                PhaseConfig config = phaseRepo
+                        .findByDirectorateAndCategoryAndPhaseType(
+                                entity.getDirectorate(),
+                                entity.getCategory(),
+                                nextPhase
+                        ).orElseThrow();
+
+                Task nextTask = Task.builder()
+                        .entity(entity)
+                        .taskType("INSPECTION")
+                        .phase(nextPhase)
+                        .subtype("GENERAL")
+                        .status("PENDING")
+                        .priority("HIGH")
+                        .sourceSystem("INTERNAL")
+                        .assignedTo(null)
+                        .build();
+
+                if (config.getDueDays() != null) {
+                    nextTask.setDueAt(OffsetDateTime.now().plusDays(config.getDueDays()));
+                }
+
+                taskRepo.save(nextTask);
+            }
         }
 
         // 🔥 Start workflow (tracking only)
