@@ -33,6 +33,7 @@ public class InspectionService {
     private final AuditService auditService;
     private final NoticeRepository noticeRepo;
     private final AppUserRepository userRepo;
+    private final ApprovalRequestRepository approvalRepo;
 
     // ── START ────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ public class InspectionService {
 
     // ── SUBMIT ───────────────────────────────────────────────────────────────
 
+    @Transactional
     public InspectionResponse submit(UUID inspectionId, SubmitRequest req, String actor) {
 
         InspectionRun run = getRun(inspectionId);
@@ -111,14 +113,18 @@ public class InspectionService {
         Task task = run.getTask();
         EntityMaster entity = run.getEntity();
 
-        String outcome = (req.outcome() != null && !req.outcome().isBlank())
-                ? req.outcome().toUpperCase()
-                : computeOutcome(run);
+        // 🔥 Inspector decides outcome
+        if (req.outcome() == null || req.outcome().isBlank()) {
+            throw new IllegalArgumentException("Outcome is required");
+        }
+
+        String outcome = req.outcome().toUpperCase();
 
         run.setOutcome(outcome);
         run.setSubmittedAt(OffsetDateTime.now());
         run.setSummaryNote(req.summaryNote());
 
+        // 🔥 Update entity
         entity.setLastInspectionAt(run.getSubmittedAt());
         entity.setLastInspectionResult(outcome);
 
@@ -126,97 +132,51 @@ public class InspectionService {
             entity.setNextDueAt(req.nextDueDate());
         }
 
-        String nextPhase = phaseResolverService.resolveNextPhase(
-                entity.getDirectorate(),
-                entity.getCategory(),
-                task.getPhase(),
-                outcome
-        );
+        // 🔥 COMPLETE TASK (inspection ends here)
+        task.setStatus("COMPLETED");
+        task.setAssignedTo(null);
+        taskRepo.save(task);
 
-        if (nextPhase != null && !nextPhase.isBlank()) {
-            PhaseConfig nextPhaseConfig = phaseRepo
-                    .findByDirectorateAndCategoryAndPhaseType(
-                            entity.getDirectorate(),
-                            entity.getCategory(),
-                            nextPhase
-                    ).orElseThrow();
-
-            task.setPhase(nextPhase);
-            task.setStatus("PENDING");
-            task.setAssignedTo(null);
-
-            if (nextPhaseConfig.getDueDays() != null) {
-                task.setDueAt(OffsetDateTime.now().plusDays(nextPhaseConfig.getDueDays()));
-            }
-
-            taskRepo.save(task);
-        } else {
-            task.setStatus("COMPLETED");
-            taskRepo.save(task);
+        // 🔥 Create approval request if needed
+        if (!"PASS".equalsIgnoreCase(outcome)) {
+            approvalRepo.save(
+                    ApprovalRequest.builder()
+                            .inspection(run)
+                            .status("PENDING")
+                            .requiredLevel("SUPERVISOR")
+                            .createdAt(OffsetDateTime.now())
+                            .build()
+            );
         }
 
-        if (req.reinspectDate() != null) {
-            taskRepo.save(Task.builder()
-                    .entity(entity)
-                    .taskType("REINSPECTION")
-                    .subtype("REINSPECTION")
-                    .phase("FollowUp")
-                    .status("PENDING")
-                    .priority("HIGH")
-                    .sourceSystem("INTERNAL")
-                    .dueAt(req.reinspectDate())
-                    .build());
-        }
-
-        if (req.followUpDate() != null) {
-            taskRepo.save(Task.builder()
-                    .entity(entity)
-                    .taskType("REINSPECTION")
-                    .subtype("REINSPECTION")
-                    .phase("FollowUpHygiene")
-                    .status("PENDING")
-                    .priority("HIGH")
-                    .sourceSystem("INTERNAL")
-                    .dueAt(req.followUpDate())
-                    .build());
-        }
-
-        long fineAmount = noticeRepo
-                .findByInspectionIdOrderByCreatedAtDesc(run.getId())
-                .stream()
-                .filter(n -> n.getFineAmount() != null)
-                .mapToLong(Notice::getFineAmount)
-                .sum();
-
-        long supervisorLimit = userRepo.findByUsername(actor).filter(u -> u.getSupervisorFineLimit() != null)
-                .map(AppUser::getSupervisorFineLimit).orElse(200L);
-
-        String noticeType = "FAIL".equals(outcome) ? "FINE" : "WARNING";
+        // 🔥 Start workflow (tracking only)
+        long supervisorLimit = userRepo.findByUsername(actor)
+                .filter(u -> u.getSupervisorFineLimit() != null)
+                .map(AppUser::getSupervisorFineLimit)
+                .orElse(200L);
 
         workflowService.startInspectionProcess(
-                fineAmount,
+                0L,
                 run.getId().toString(),
                 entity.getId().toString(),
                 outcome,
-                noticeType,
+                null,
                 actor,
                 supervisorLimit
         );
 
         run = inspectionRepo.save(run);
 
-        // ✅ CLEAN AUDIT
         auditService.log(
-                
                 actor,
                 "SUBMIT_INSPECTION",
                 "InspectionRun",
-                run.getId().toString()
+                run.getId().toString(),
+                Map.of("outcome", outcome)
         );
 
         return toResponse(run);
     }
-
     // ── HELPERS ──────────────────────────────────────────────────────────────
 
     private String computeOutcome(InspectionRun run) {

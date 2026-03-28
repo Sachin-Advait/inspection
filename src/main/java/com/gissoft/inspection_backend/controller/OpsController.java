@@ -140,7 +140,7 @@ public class OpsController {
     public ResponseEntity<ApprovalRequest> approve(
             @PathVariable UUID approvalId,
             @RequestBody(required = false) DecisionRequest req,
-            @RequestParam(defaultValue = "supervisor") String actor) {
+            @RequestParam(defaultValue = "supervisor") String actor) throws Exception {
         return ResponseEntity.ok(approvalService.approve(approvalId, req, actor));
     }
 
