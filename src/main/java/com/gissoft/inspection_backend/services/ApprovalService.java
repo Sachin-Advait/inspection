@@ -75,7 +75,7 @@ public class ApprovalService {
                         run.getId(),          // ✅ inspectionId FIRST
                         entity.getId(),       // ✅ entityId SECOND
                         noticeType,
-                        0L,
+                        200L,
                         "EN"                  // ✅ required field
                 ),
                 actor

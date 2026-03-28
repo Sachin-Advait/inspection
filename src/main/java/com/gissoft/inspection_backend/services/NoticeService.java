@@ -64,7 +64,11 @@ public class NoticeService {
                 .noticeNo(noticeNo)
                 .entityId(req.entityId())
                 .inspectionId(req.inspectionId())
-                .noticeType(req.noticeType())
+                .noticeType(
+                        req.noticeType() != null && !req.noticeType().isBlank()
+                                ? req.noticeType()
+                                : "WARNING"
+                )
                 .fineAmount(req.fineAmount())
                 .status("DRAFT")
                 .storageKeyPdf(pdfUrl)
