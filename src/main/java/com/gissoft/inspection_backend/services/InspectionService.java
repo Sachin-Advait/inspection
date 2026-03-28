@@ -174,6 +174,7 @@ public class InspectionService {
                         .status("PENDING")
                         .priority("HIGH")
                         .sourceSystem("INTERNAL")
+                        .dueAt(OffsetDateTime.now().plusDays(7))
                         .assignedTo(null)
                         .build();
 
